@@ -773,10 +773,10 @@ async function openConversation(chatId, name, avatarUrl, isOnline) {
     const e2eeBtn = document.getElementById('e2ee-toggle-btn');
     if (e2eeBtn) {
         if (window.e2eeKeys[chatId]) {
-            e2eeBtn.textContent = "🛡️ E2EE On";
+            e2eeBtn.innerHTML = `🛡️ <span class="mobile-hide">E2EE On</span>`;
             e2eeBtn.classList.add('btn-e2ee-active');
         } else {
-            e2eeBtn.textContent = "🔒 E2EE Off";
+            e2eeBtn.innerHTML = `🔒 <span class="mobile-hide">E2EE Off</span>`;
             e2eeBtn.classList.remove('btn-e2ee-active');
         }
     }
@@ -1260,7 +1260,7 @@ async function toggleE2EE() {
     const btn = document.getElementById('e2ee-toggle-btn');
     if (window.e2eeKeys[activeChatId]) {
         delete window.e2eeKeys[activeChatId];
-        btn.textContent = "🔒 E2EE Off";
+        btn.innerHTML = `🔒 <span class="mobile-hide">E2EE Off</span>`;
         btn.classList.remove('btn-e2ee-active');
         // Reload history to refresh view
         openConversation(activeChatId, document.getElementById('active-chat-title').textContent, document.getElementById('active-chat-avatar').src, activeChatOnline ? 1 : 0);
@@ -1272,7 +1272,7 @@ async function toggleE2EE() {
             const saltHex = `aethersync_salt_${activeChatId}`;
             const key = await deriveE2EEKey(passphrase, saltHex);
             window.e2eeKeys[activeChatId] = key;
-            btn.textContent = "🛡️ E2EE On";
+            btn.innerHTML = `🛡️ <span class="mobile-hide">E2EE On</span>`;
             btn.classList.add('btn-e2ee-active');
             openConversation(activeChatId, document.getElementById('active-chat-title').textContent, document.getElementById('active-chat-avatar').src, activeChatOnline ? 1 : 0);
         } catch (err) {
@@ -2039,4 +2039,13 @@ function showConnectionSuccessBanner() {
         }, 1500);
     }
 }
+
+function closeActiveChat() {
+    activeChatId = null;
+    document.getElementById('active-chat-container').classList.remove('chat-active');
+    document.querySelector('.chat-layout').classList.remove('chat-active');
+    document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
+    document.getElementById('chat-placeholder').classList.add('active');
+}
+
 

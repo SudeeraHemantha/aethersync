@@ -136,6 +136,7 @@
                         <!-- Chat Header -->
                         <header class="chat-header">
                             <div class="chat-header-info">
+                                <button class="back-btn" onclick="closeActiveChat()">←</button>
                                 <img id="active-chat-avatar" src="" alt="Avatar">
                                 <div class="name-status">
                                     <h3 id="active-chat-title">Chat Name</h3>
@@ -143,9 +144,9 @@
                                 </div>
                             </div>
                             <div class="chat-header-actions">
-                                <button id="e2ee-toggle-btn" class="btn btn-secondary-small" onclick="toggleE2EE()" title="Toggle End-to-End Encryption">🔒 E2EE Off</button>
-                                <button class="btn btn-secondary-small" onclick="toggleClipboardPanel()">📋 Clipboard</button>
-                                <button class="btn btn-secondary-small" onclick="toggleVaultPanel()">📁 Vault Files</button>
+                                <button id="e2ee-toggle-btn" class="btn btn-secondary-small" onclick="toggleE2EE()" title="Toggle End-to-End Encryption">🔒 <span class="mobile-hide">E2EE Off</span></button>
+                                <button class="btn btn-secondary-small" onclick="toggleClipboardPanel()">📋 <span class="mobile-hide">Clipboard</span></button>
+                                <button class="btn btn-secondary-small" onclick="toggleVaultPanel()">📁 <span class="mobile-hide">Vault Files</span></button>
                             </div>
                         </header>
                         
