@@ -216,7 +216,7 @@ def get_auth_challenge(req: ChallengeRequest):
     username = req.username.strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
+    cursor.execute("SELECT password_hash FROM users WHERE username = ? COLLATE NOCASE", (username,))
     row = cursor.fetchone()
     conn.close()
     
@@ -293,7 +293,7 @@ def login_user(req: LoginRequest):
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, password_hash, role FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT id, username, password_hash, role FROM users WHERE username = ? COLLATE NOCASE", (username,))
         user = cursor.fetchone()
         conn.close()
         
@@ -315,7 +315,7 @@ def login_user(req: LoginRequest):
     elif req.password:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, password_hash, role FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT id, username, password_hash, role FROM users WHERE username = ? COLLATE NOCASE", (username,))
         user = cursor.fetchone()
         conn.close()
         
@@ -571,7 +571,7 @@ def create_chat(req: CreateChatRequest, user = Depends(get_current_user)):
     if req.type == "direct":
         recipient_username = req.recipient_username.strip().lower()
         # Check if recipient exists
-        cursor.execute("SELECT id FROM users WHERE username = ?", (recipient_username,))
+        cursor.execute("SELECT id FROM users WHERE username = ? COLLATE NOCASE", (recipient_username,))
         recipient = cursor.fetchone()
         if not recipient:
             conn.close()
@@ -834,7 +834,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+            cursor.execute("SELECT id FROM users WHERE username = ? COLLATE NOCASE", (username,))
             row = cursor.fetchone()
             if row:
                 user_id = row["id"]
@@ -1089,7 +1089,7 @@ async def receive_remote_message(req: RemoteMessagePayload):
     cursor = conn.cursor()
     
     # 1. Resolve or register sender
-    cursor.execute("SELECT id FROM users WHERE username = ?", (req.sender_name,))
+    cursor.execute("SELECT id FROM users WHERE username = ? COLLATE NOCASE", (req.sender_name,))
     sender = cursor.fetchone()
     if not sender:
         dummy_hash = hash_password(uuid.uuid4().hex)
@@ -1179,7 +1179,7 @@ def register_remote_user(username: str, remote_ip: str):
         cursor = conn.cursor()
         
         # Check if user already exists
-        cursor.execute("SELECT id, remote_ip FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT id, remote_ip FROM users WHERE username = ? COLLATE NOCASE", (username,))
         row = cursor.fetchone()
         
         if row:
