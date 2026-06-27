@@ -1,0 +1,21 @@
+aethersync.db
+aethersync.db-journal
+aethersync.db-wal
+__pycache__/
+*.pyc
+shared_vault/*
+!shared_vault/.gitkeep
+.system_generated/
+.gemini/
+
+# Node dependencies
+node_modules/
+frontend/node_modules/
+
+# Local JDKs and Android build files
+android/jdk17/
+.gradle/
+build/
+android/app/build/
+*.apk
+*.aar

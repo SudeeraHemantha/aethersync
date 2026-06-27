@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AetherLink - LAN Messenger</title>
+    <link rel="stylesheet" href="/static/style.css?v=1.0.7">
+    <!-- PWA Mobile Installation Support -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#090f1d">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+</head>
+<body>
+    <div id="connection-status-banner" class="connection-banner">Offline - Reconnecting to AetherSync...</div>
+    <div id="app-container">
+        <!-- ------------------------------------------------------------- -->
+        <!-- 1. LOGIN & DEVICE PAIRING SCREEN -->
+        <!-- ------------------------------------------------------------- -->
+        <div id="auth-screen" class="screen active">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div class="glow-logo">⚡</div>
+                    <h1>AETHERLINK</h1>
+                    <p>LOCAL SECURE MESSENGER</p>
+                </div>
+                
+                <div class="auth-tabs">
+                    <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">SIGN IN</button>
+                    <button id="tab-pair" class="auth-tab" onclick="switchAuthTab('pair')">DEVICE SYNC</button>
+                </div>
+
+                <!-- Credentials Panel -->
+                <div id="credentials-panel" class="auth-panel active">
+                    <form id="login-form" onsubmit="handleLogin(event)">
+                        <div class="input-group">
+                            <label>USERNAME</label>
+                            <input type="text" id="username" required placeholder="Enter username">
+                        </div>
+                        <div class="input-group">
+                            <label>PASSWORD</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="password" required placeholder="Enter password">
+                                <button type="button" id="password-toggle-btn" class="password-toggle-btn" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility">👁️</button>
+                            </div>
+                        </div>
+                        <div class="auth-actions">
+                            <button type="submit" class="btn btn-primary">LOGIN</button>
+                            <button type="button" class="btn btn-secondary" onclick="handleRegister()">CREATE ACCOUNT</button>
+                        </div>
+                    </form>
+                    <p id="auth-error" class="error-text"></p>
+                </div>
+
+                <!-- Device Sync Panel -->
+                <div id="pairing-panel" class="auth-panel">
+                    <p class="pairing-desc">Type this 6-digit PIN into the Host Desktop App to sync your account instantly:</p>
+                    
+                    <div class="pin-display">
+                        <span class="pin-digit" id="d1">-</span>
+                        <span class="pin-digit" id="d2">-</span>
+                        <span class="pin-digit" id="d3">-</span>
+                        <span class="pin-digit" id="d4">-</span>
+                        <span class="pin-digit" id="d5">-</span>
+                        <span class="pin-digit" id="d6">-</span>
+                    </div>
+
+                    <div class="device-info-row">
+                        <span class="label">CLIENT DEVICE:</span>
+                        <span id="device-name-lbl" class="val">Detecting...</span>
+                    </div>
+
+                    <div class="pulse-status">
+                        <div class="spinner"></div>
+                        <span>Awaiting approval from Desktop Hub...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ------------------------------------------------------------- -->
+        <!-- 2. MAIN WHATSAPP-STYLE APPLICATION CORE -->
+        <!-- ------------------------------------------------------------- -->
+        <div id="main-screen" class="screen">
+            <div class="chat-layout">
+                
+                <!-- LEFT SIDEBAR: Contact Lists and Chats -->
+                <aside class="sidebar">
+                    <!-- User Header -->
+                    <header class="sidebar-header">
+                        <div class="user-avatar-area" onclick="toggleSettingsModal()" title="View Profile">
+                            <img id="my-avatar" src="https://api.dicebear.com/7.x/adventurer/svg?seed=guest" alt="Avatar">
+                            <div class="username-container" style="display: flex; flex-direction: column; gap: 2px;">
+                                <span id="my-username">Guest</span>
+                                <span id="ws-status-badge" class="status-badge connected">online</span>
+                            </div>
+                        </div>
+                        <div class="header-actions">
+                            <button class="action-btn" onclick="toggleCreateChatModal()" title="New Chat">＋</button>
+                            <button class="action-btn" onclick="toggleSettingsModal()" title="Settings">⚙️</button>
+                            <button class="action-btn" onclick="handleLogout()" title="Logout">🚪</button>
+                        </div>
+                    </header>
+                    
+                    <!-- Search Bar -->
+                    <div class="sidebar-search">
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="chat-search" placeholder="Search or start new chat" oninput="filterChatList()">
+                        </div>
+                    </div>
+                    
+                    <!-- Chats List Box -->
+                    <div id="chat-list" class="chat-list">
+                        <!-- Appended dynamically -->
+                    </div>
+                </aside>
+                
+                <!-- RIGHT PANE: Chat Console -->
+                <main class="chat-pane">
+                    
+                    <!-- Awaiting Chat Screen -->
+                    <div id="chat-placeholder" class="chat-placeholder active">
+                        <div class="placeholder-content">
+                            <div class="placeholder-icon">⚡</div>
+                            <h2>AetherLink Local Secure Hub</h2>
+                            <p>Send and receive messages with zero internet dependency.</p>
+                            <p class="meta-desc">Connect devices to your local Wi-Fi, mount your 256GB HDD storage on the desktop app, and communicate securely on LAN.</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Active Chat Screen -->
+                    <div id="active-chat-container" class="active-chat-container">
+                        <!-- Chat Header -->
+                        <header class="chat-header">
+                            <div class="chat-header-info">
+                                <img id="active-chat-avatar" src="" alt="Avatar">
+                                <div class="name-status">
+                                    <h3 id="active-chat-title">Chat Name</h3>
+                                    <span id="active-chat-status" class="status-offline">Offline</span>
+                                </div>
+                            </div>
+                            <div class="chat-header-actions">
+                                <button id="e2ee-toggle-btn" class="btn btn-secondary-small" onclick="toggleE2EE()" title="Toggle End-to-End Encryption">🔒 E2EE Off</button>
+                                <button class="btn btn-secondary-small" onclick="toggleClipboardPanel()">📋 Clipboard</button>
+                                <button class="btn btn-secondary-small" onclick="toggleVaultPanel()">📁 Vault Files</button>
+                            </div>
+                        </header>
+                        
+                        <!-- Messages History -->
+                        <div id="messages-box" class="messages-box">
+                            <!-- Messages bubbles loaded dynamically -->
+                        </div>
+                        
+                        <!-- Uploading/Recording indicators -->
+                        <div id="chat-upload-indicator" class="chat-upload-indicator">
+                            <span id="upload-name">File.zip</span>
+                            <div class="bar-track"><div id="upload-bar-fill" class="bar-fill"></div></div>
+                            <span id="upload-pct">0%</span>
+                        </div>
+                        
+                        <!-- Chat Input Deck -->
+                        <footer class="chat-input-deck">
+                            <!-- Attachments dropdown trigger -->
+                            <div class="input-btn-wrapper">
+                                <button class="input-deck-btn" onclick="toggleAttachmentMenu()">📎</button>
+                                <div id="attachment-menu" class="attachment-menu">
+                                    <button onclick="triggerFileSelect('image')">🖼️ Image</button>
+                                    <button onclick="triggerFileSelect('video')">🎥 Video</button>
+                                    <button onclick="triggerFileSelect('audio')">🎵 Audio</button>
+                                    <button onclick="triggerFileSelect('document')">📄 Document</button>
+                                </div>
+                                <input type="file" id="media-file-input" style="display: none;" onchange="handleMediaSelect(event)">
+                            </div>
+                            
+                            <!-- Main Text Field -->
+                            <form id="chat-send-form" class="chat-send-form" onsubmit="sendTextMessage(event)">
+                                <input type="text" id="chat-text-input" placeholder="Type a message..." required autocomplete="off">
+                                <button type="submit" class="send-submit-btn">✈</button>
+                            </form>
+                            
+                            <!-- Voice Note Recorder Button -->
+                            <button id="voice-record-btn" class="input-deck-btn voice-btn" onclick="toggleVoiceRecording()" aria-label="Record voice note">🎙️</button>
+    <span id="recording-timer" aria-live="polite"><span class="timer-dot"></span><span id="timer-text">0:00</span></span>
+                        </footer>
+                    </div>
+                </main>
+            </div>
+        </div>
+
+        <!-- ------------------------------------------------------------- -->
+        <!-- 3. MODALS & SUB-PANELS -->
+        <!-- ------------------------------------------------------------- -->
+        
+        <!-- Create Chat Modal -->
+        <div id="create-chat-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Start New Chat</h3>
+                    <button class="close-btn" onclick="toggleCreateChatModal()">✕</button>
+                </div>
+                <div class="modal-tabs">
+                    <button id="tab-new-dm" class="modal-tab active" onclick="switchModalTab('dm')">Direct Message</button>
+                    <button id="tab-new-group" class="modal-tab" onclick="switchModalTab('group')">New Group</button>
+                </div>
+                
+                <div id="panel-new-dm" class="modal-panel active">
+                    <div class="input-group">
+                        <label>CONTACT USERNAME</label>
+                        <input type="text" id="new-chat-username" placeholder="Type username...">
+                    </div>
+                    <button class="btn btn-primary" onclick="createDirectChat()">START CONVERSATION</button>
+                </div>
+                
+                <div id="panel-new-group" class="modal-panel">
+                    <div class="input-group">
+                        <label>GROUP NAME</label>
+                        <input type="text" id="new-group-name" placeholder="Type group name...">
+                    </div>
+                    <button class="btn btn-primary" onclick="createGroupChat()">CREATE GROUP</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile & System Settings Modal -->
+        <div id="settings-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Settings</h3>
+                    <button class="close-btn" onclick="toggleSettingsModal()">✕</button>
+                </div>
+                
+                <!-- Profile Customization -->
+                <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 12px;">
+                    <h4 style="font-size: 10px; color: var(--accent-color); margin-bottom: 10px; letter-spacing: 1px;">PROFILE SETTINGS</h4>
+                    <div class="input-group">
+                        <label>AVATAR SVG SEED URL</label>
+                        <input type="text" id="settings-avatar-url" placeholder="https://api.dicebear.com/...">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 8px;">
+                        <label>STATUS STATEMENT</label>
+                        <input type="text" id="settings-status" placeholder="Hey there! I am using AetherLink.">
+                    </div>
+                </div>
+
+                <!-- Interface & Color Customization -->
+                <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 12px;">
+                    <h4 style="font-size: 10px; color: var(--accent-color); margin-bottom: 8px; letter-spacing: 1px;">THEME ACCENT COLOR</h4>
+                    <div style="display: flex; gap: 8px; margin-bottom: 4px;">
+                        <button type="button" class="btn" style="flex: 1; padding: 6px; font-size: 11px; background-color: #ef4444; color: white;" onclick="setThemeAccent('red')">RED</button>
+                        <button type="button" class="btn" style="flex: 1; padding: 6px; font-size: 11px; background-color: #3b82f6; color: white;" onclick="setThemeAccent('blue')">BLUE</button>
+                        <button type="button" class="btn" style="flex: 1; padding: 6px; font-size: 11px; background-color: #10b981; color: white;" onclick="setThemeAccent('green')">GREEN</button>
+                        <button type="button" class="btn" style="flex: 1; padding: 6px; font-size: 11px; background-color: #fbbf24; color: black;" onclick="setThemeAccent('amber')">GOLD</button>
+                    </div>
+                </div>
+
+                <!-- Notification Audio Toggle -->
+                <div style="margin-bottom: 16px;">
+                    <h4 style="font-size: 10px; color: var(--accent-color); margin-bottom: 8px; letter-spacing: 1px;">SOUND NOTIFICATIONS</h4>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer; color: var(--text-body);">
+                        <input type="checkbox" id="settings-sound-alert" style="accent-color: var(--accent-color);"> Enable alert sound on new messages
+                    </label>
+                </div>
+
+                <button class="btn btn-primary" style="width: 100%;" onclick="saveSettings()">SAVE SETTINGS</button>
+            </div>
+        </div>
+
+        <!-- Image Compression Option Modal -->
+        <div id="compress-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Image Quality Option</h3>
+                    <button class="close-btn" onclick="closeCompressModal()">✕</button>
+                </div>
+                <div class="compress-modal-body" style="padding: 10px 0; font-size: 13px; color: var(--text-body); line-height: 1.5;">
+                    <p style="margin-bottom: 16px;">The image you selected is relatively large (<span id="compress-file-size" style="font-weight: bold; color: var(--accent-color);">0.0 MB</span>). How would you like to send it?</p>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button id="btn-compress-send" class="btn btn-primary" style="display: flex; flex-direction: column; align-items: center; padding: 12px; gap: 4px; border-radius: 8px;">
+                            <span style="font-weight: bold; font-size: 13px;">⚡ Compress Image (Recommended)</span>
+                            <span style="font-size: 10px; opacity: 0.8; font-weight: normal;">Saves bandwidth, uploads much faster. Ideal for standard sharing.</span>
+                        </button>
+                        <button id="btn-original-send" class="btn btn-secondary" style="display: flex; flex-direction: column; align-items: center; padding: 12px; gap: 4px; border-radius: 8px;">
+                            <span style="font-weight: bold; font-size: 13px;">📷 Send Original Quality</span>
+                            <span style="font-size: 10px; opacity: 0.8; font-weight: normal;">Keeps full resolution & 4K quality. Takes longer to upload.</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shared Vault Sliding Panel -->
+        <div id="vault-panel" class="slide-panel">
+            <div class="slide-header">
+                <h3>📁 VAULT DIRECTORY</h3>
+                <button class="close-btn" onclick="toggleVaultPanel()">✕</button>
+            </div>
+            <div class="slide-body">
+                <div class="vault-upload-zone" onclick="triggerVaultUpload()">
+                    <span>☁️ Upload to Active Storage HDD</span>
+                    <input type="file" id="vault-file-input" style="display: none;" onchange="handleVaultUploadSelect(event)" multiple>
+                </div>
+                <div class="vault-file-list" id="vault-file-list">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Shared Clipboard Sliding Panel -->
+        <div id="clipboard-panel" class="slide-panel">
+            <div class="slide-header">
+                <h3>📋 LAN CLIPBOARD</h3>
+                <button class="close-btn" onclick="toggleClipboardPanel()">✕</button>
+            </div>
+            <div class="slide-body clipboard-slide-body">
+                <textarea id="clipboard-text" placeholder="Type to sync clipboards across devices..."></textarea>
+                <div class="clipboard-row">
+                    <button class="btn btn-primary" onclick="pushClipboard()">PUSH CLIPBOARD</button>
+                    <button class="btn btn-secondary" onclick="pullClipboard()">PULL LATEST</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Drag & Drop Fullscreen Overlay -->
+        <div id="drag-drop-overlay" class="drag-drop-overlay">
+            <div class="drag-overlay-box">
+                <div class="drag-pulse-icon">⚡</div>
+                <h2>DROP FILES HERE TO BROADCAST TO THE VAULT</h2>
+                <p>Supports Images, Videos, Audio, and Documents</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="/static/app.js?v=1.0.8"></script>
+</body>
+</html>

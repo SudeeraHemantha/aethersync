@@ -1,0 +1,2 @@
+desktop/icon.ico filter=lfs diff=lfs merge=lfs -text
+frontend/static/icon.png filter=lfs diff=lfs merge=lfs -text
