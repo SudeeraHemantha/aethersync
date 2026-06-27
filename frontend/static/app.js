@@ -35,6 +35,9 @@ window.addEventListener('DOMContentLoaded', () => {
     initDevice();
     checkExistingAuth();
     
+    // Trigger Cyberpunk Boot Diagnostic Sequence
+    runBootDiagnosticSequence();
+    
     // Restore theme accent on startup
     const savedAccent = localStorage.getItem('aethersync_accent_name') || 'red';
     setThemeAccent(savedAccent);
@@ -949,24 +952,24 @@ function appendMessageBubble(msg) {
     } else if (msgType === 'audio') {
         const uniqueId = `audio-${msg.id}`;
         bodyContent = `
-            <div class="audio-player-bubble" id="${uniqueId}">
-                <button class="audio-btn play-pause-btn" onclick="toggleAudioPlay(this, '${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')">▶</button>
-                <div class="audio-wave-container" onclick="seekAudio(event, this)">
-                    <div class="audio-track-fill"></div>
-                    <div class="audio-mock-waveform">
-                        <span style="height: 10px;"></span>
-                        <span style="height: 22px;"></span>
-                        <span style="height: 14px;"></span>
-                        <span style="height: 26px;"></span>
-                        <span style="height: 18px;"></span>
-                        <span style="height: 12px;"></span>
-                        <span style="height: 20px;"></span>
-                        <span style="height: 16px;"></span>
-                        <span style="height: 24px;"></span>
-                        <span style="height: 10px;"></span>
+            <div class="audio-player-bubble neon-audio-player" id="${uniqueId}">
+                <button class="audio-btn play-pause-btn audio-ctrl-btn" onclick="toggleAudioPlay(this, '${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')">▶</button>
+                <div class="audio-wave-container audio-wave-bars" onclick="seekAudio(event, this)">
+                    <div class="audio-track-fill" style="display: none;"></div>
+                    <div class="audio-mock-waveform" style="display: flex; align-items: center; gap: 3px; width: 100%; height: 100%;">
+                        <span class="audio-wave-bar" style="height: 10px;"></span>
+                        <span class="audio-wave-bar" style="height: 22px;"></span>
+                        <span class="audio-wave-bar" style="height: 14px;"></span>
+                        <span class="audio-wave-bar" style="height: 20px;"></span>
+                        <span class="audio-wave-bar" style="height: 18px;"></span>
+                        <span class="audio-wave-bar" style="height: 12px;"></span>
+                        <span class="audio-wave-bar" style="height: 20px;"></span>
+                        <span class="audio-wave-bar" style="height: 16px;"></span>
+                        <span class="audio-wave-bar" style="height: 24px;"></span>
+                        <span class="audio-wave-bar" style="height: 10px;"></span>
                     </div>
                 </div>
-                <button class="audio-speed-btn" onclick="toggleAudioSpeed(this)">1.0x</button>
+                <button class="audio-speed-btn audio-ctrl-btn" onclick="toggleAudioSpeed(this)">1.0x</button>
                 <audio style="display: none;"></audio>
             </div>
         `;
@@ -1001,6 +1004,15 @@ async function sendTextMessage(e) {
     if (!content) return;
     
     input.value = "";
+    
+    // Trigger Send Message Particle Burst
+    const form = document.getElementById('chat-send-form');
+    if (form && window.triggerSendBurst) {
+        const rect = form.getBoundingClientRect();
+        const sendBtnX = rect.right - 20;
+        const sendBtnY = rect.top + (rect.height / 2);
+        window.triggerSendBurst(sendBtnX, sendBtnY);
+    }
     
     let finalContent = content;
     const e2eeKey = window.e2eeKeys[activeChatId];
@@ -1412,7 +1424,6 @@ function toggleAudioPlay(btn, audioSrc) {
     const fill = bubble.querySelector('.audio-track-fill');
     const audioEl = bubble.querySelector('audio');
     const speedBtn = bubble.querySelector('.audio-speed-btn');
-    const waveform = bubble.querySelector('.audio-mock-waveform');
     
     if (audioEl.src !== window.location.origin + audioSrc && audioEl.src !== audioSrc) {
         audioEl.src = audioSrc;
@@ -1429,32 +1440,32 @@ function toggleAudioPlay(btn, audioSrc) {
                 a.pause();
                 const otherPlayBtn = a.closest('.audio-player-bubble')?.querySelector('.play-pause-btn');
                 if (otherPlayBtn) otherPlayBtn.textContent = "▶";
-                a.closest('.audio-player-bubble')?.querySelector('.audio-mock-waveform')?.classList.remove('playing');
+                a.closest('.audio-player-bubble')?.classList.remove('playing');
             }
         });
         
         // Play audio
         audioEl.play();
         btn.textContent = "⏸";
-        if (waveform) waveform.classList.add('playing');
+        if (bubble) bubble.classList.add('playing');
         
         audioEl.ontimeupdate = () => {
             if (audioEl.duration) {
                 const pct = (audioEl.currentTime / audioEl.duration) * 100;
-                fill.style.width = `${pct}%`;
+                if (fill) fill.style.width = `${pct}%`;
             }
         };
         
         audioEl.onended = () => {
             btn.textContent = "▶";
-            fill.style.width = "0%";
-            if (waveform) waveform.classList.remove('playing');
+            if (fill) fill.style.width = "0%";
+            if (bubble) bubble.classList.remove('playing');
         };
     } else {
         // Pause audio
         audioEl.pause();
         btn.textContent = "▶";
-        if (waveform) waveform.classList.remove('playing');
+        if (bubble) bubble.classList.remove('playing');
     }
 }
 
@@ -2047,5 +2058,40 @@ function closeActiveChat() {
     document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
     document.getElementById('chat-placeholder').classList.add('active');
 }
+
+function runBootDiagnosticSequence() {
+    const screen = document.getElementById('cyber-boot-screen');
+    const log = document.getElementById('boot-terminal-log');
+    if (!screen || !log) return;
+    
+    const logs = [
+        "[OS INITIALIZING] ... OK",
+        "[RESOLVING LAN NETWORK SUBNETS] ... OK",
+        "[SCANNING ACTIVE PEERS ON PORT 8085] ... OK",
+        "[DECRYPTING ENCRYPTION VAULTS] ... OK",
+        "[ESTABLISHING ENCRYPTED SOCKET HANDSHAKE] ... OK",
+        "[BOOT SEQUENCE COMPLETE] ... BOOTING HUB"
+    ];
+    
+    let index = 0;
+    function printNextLog() {
+        if (index < logs.length) {
+            log.innerHTML += `<div>&gt; ${logs[index]}</div>`;
+            log.scrollTop = log.scrollHeight;
+            index++;
+            setTimeout(printNextLog, 220);
+        } else {
+            setTimeout(() => {
+                screen.style.opacity = '0';
+                setTimeout(() => {
+                    screen.style.display = 'none';
+                }, 500);
+            }, 300);
+        }
+    }
+    
+    setTimeout(printNextLog, 150);
+}
+
 
 

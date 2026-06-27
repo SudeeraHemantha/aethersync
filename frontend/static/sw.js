@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aethersync-cache-v5';
+const CACHE_NAME = 'aethersync-cache-v6';
 const PRE_CACHE_ASSETS = [
   '/',
   '/static/style.css',

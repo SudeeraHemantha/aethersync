@@ -14,6 +14,17 @@
     <link rel="apple-touch-icon" href="/static/icon.png">
 </head>
 <body>
+    <canvas id="network-bg"></canvas>
+    
+    <!-- Cyberpunk Diagnostic Boot Loader Screen -->
+    <div id="cyber-boot-screen" class="cyber-boot-screen">
+        <div class="boot-text-container">
+            <div class="glitch-logo" data-text="AETHERLINK">AETHERLINK</div>
+            <div id="boot-terminal-log"></div>
+            <div class="boot-spinner-ring"></div>
+        </div>
+    </div>
+
     <div id="connection-status-banner" class="connection-banner">Offline - Reconnecting to AetherSync...</div>
     <div id="app-container">
         <!-- ------------------------------------------------------------- -->
@@ -23,7 +34,7 @@
             <div class="auth-card">
                 <div class="auth-header">
                     <div class="glow-logo">⚡</div>
-                    <h1>AETHERLINK</h1>
+                    <h1 class="glitch-logo" data-text="AETHERLINK">AETHERLINK</h1>
                     <p>LOCAL SECURE MESSENGER</p>
                 </div>
                 
@@ -339,5 +350,7 @@
 
     <!-- Application Script -->
     <script src="/static/app.js?v=1.0.8"></script>
+    <!-- Canvas Particle Engine -->
+    <script src="/static/network_bg.js"></script>
 </body>
 </html>
