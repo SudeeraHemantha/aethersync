@@ -302,6 +302,9 @@
                     <span>☁️ Upload to Active Storage HDD</span>
                     <input type="file" id="vault-file-input" style="display: none;" onchange="handleVaultUploadSelect(event)" multiple>
                 </div>
+                <div class="vault-search-container">
+                    <input type="text" id="vault-search-input" placeholder="🔍 Search vault files..." oninput="filterVaultFiles()">
+                </div>
                 <div class="vault-file-list" id="vault-file-list">
                     <!-- Loaded dynamically -->
                 </div>

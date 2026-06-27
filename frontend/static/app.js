@@ -1703,10 +1703,27 @@ async function pullVaultFilesList() {
             `;
             list.appendChild(div);
         });
+        
+        // Re-apply search filter if there's any active text
+        filterVaultFiles();
     } catch (e) {
         console.error("Failed to load vault files:", e);
     }
 }
+
+function filterVaultFiles() {
+    const query = (document.getElementById('vault-search-input')?.value || '').toLowerCase().trim();
+    const items = document.querySelectorAll('.vault-file-item');
+    items.forEach(item => {
+        const fileName = (item.querySelector('.vault-file-info h4')?.textContent || '').toLowerCase();
+        if (fileName.includes(query)) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
 
 async function deleteVaultFile(filename) {
     if (!confirm(`Delete "${filename}"?`)) return;

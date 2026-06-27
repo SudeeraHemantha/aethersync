@@ -213,7 +213,7 @@ active_nonces = defaultdict(dict)
 
 @app.post("/api/auth/challenge")
 def get_auth_challenge(req: ChallengeRequest):
-    username = req.username.strip()
+    username = req.username.strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
@@ -248,6 +248,7 @@ def get_auth_challenge(req: ChallengeRequest):
 def register_user(req: RegisterRequest):
     conn = get_db_connection()
     cursor = conn.cursor()
+    username_lower = req.username.strip().lower()
     
     if req.salt and req.password_hash:
         salt = req.salt.strip()
@@ -260,11 +261,11 @@ def register_user(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="Missing registration credentials")
         
     # Generate seed avatar
-    avatar = f"https://api.dicebear.com/7.x/adventurer/svg?seed={req.username.strip()}"
+    avatar = f"https://api.dicebear.com/7.x/adventurer/svg?seed={username_lower}"
     try:
         cursor.execute(
             "INSERT INTO users (username, password_hash, role, avatar_url) VALUES (?, ?, ?, ?)",
-            (req.username.strip(), stored_hash, "user", avatar)
+            (username_lower, stored_hash, "user", avatar)
         )
         conn.commit()
         conn.close()
@@ -275,7 +276,7 @@ def register_user(req: RegisterRequest):
 
 @app.post("/api/auth/login", dependencies=[Depends(login_limiter)])
 def login_user(req: LoginRequest):
-    username = req.username.strip()
+    username = req.username.strip().lower()
     user = None
     
     # 1. Challenge-Response auth
@@ -568,8 +569,9 @@ def create_chat(req: CreateChatRequest, user = Depends(get_current_user)):
     cursor = conn.cursor()
     
     if req.type == "direct":
+        recipient_username = req.recipient_username.strip().lower()
         # Check if recipient exists
-        cursor.execute("SELECT id FROM users WHERE username = ?", (req.recipient_username,))
+        cursor.execute("SELECT id FROM users WHERE username = ?", (recipient_username,))
         recipient = cursor.fetchone()
         if not recipient:
             conn.close()
@@ -1172,6 +1174,7 @@ def forward_message_to_remote(remote_ip: str, sender_name: str, content: str, ms
 
 def register_remote_user(username: str, remote_ip: str):
     try:
+        username = username.strip().lower()
         conn = get_db_connection()
         cursor = conn.cursor()
         

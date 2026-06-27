@@ -1155,6 +1155,28 @@ body {
     background-color: rgba(59, 130, 246, 0.05);
 }
 
+.vault-search-container {
+    margin-bottom: 16px;
+}
+
+#vault-search-input {
+    width: 100%;
+    background-color: var(--bg-inner);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#vault-search-input:focus {
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.2);
+}
+
+
 .vault-file-list {
     display: flex;
     flex-direction: column;
