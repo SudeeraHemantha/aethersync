@@ -222,6 +222,12 @@ class MainActivity : ComponentActivity() {
                                     }
                                     Toast.makeText(view?.context, "Connection Error: $description", Toast.LENGTH_LONG).show()
                                 }
+
+                                override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: android.net.http.SslError?) {
+                                    android.util.Log.e("WebViewConsole", "SSL Error: ${error?.toString()}")
+                                    Toast.makeText(view?.context, "SSL Warning bypassed", Toast.LENGTH_SHORT).show()
+                                    handler?.proceed()
+                                }
                             }
                             
                             webChromeClient = object : WebChromeClient() {
