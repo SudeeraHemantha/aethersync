@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+        window.onerror = function(msg, url, line, col, error) {
+            alert("JS ERROR DETECTED:\n" + msg + "\n\nFile: " + url + "\nLine: " + line);
+            return false;
+        };
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AetherLink - LAN Messenger</title>
