@@ -72,6 +72,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         checkAndRequestPermissions()
+        
+        // Enable WebView remote debugging via PC Chrome (chrome://inspect)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
 
         setContent {
             AetherLinkAppScreen()
@@ -169,10 +174,17 @@ class MainActivity : ComponentActivity() {
                             if (inputIp.trim().isNotEmpty()) {
                                 var formattedIp = inputIp.trim()
                                 if (!formattedIp.startsWith("http://") && !formattedIp.startsWith("https://")) {
+                                    // Default to local port 8080 ONLY if input is a raw IP or localhost
+                                    val firstChar = formattedIp.firstOrNull()
+                                    val isLocalHostOrIp = (firstChar != null && firstChar.isDigit()) || formattedIp.startsWith("localhost", ignoreCase = true)
+                                    val hasPort = formattedIp.contains(":")
+                                    
+                                    if (isLocalHostOrIp && !hasPort) {
+                                        formattedIp = "$formattedIp:8080"
+                                    }
+                                    
+                                    // Prepend http protocol
                                     formattedIp = "http://$formattedIp"
-                                }
-                                if (!formattedIp.contains(":")) {
-                                    formattedIp = "$formattedIp:8080"
                                 }
                                 sharedPref.edit().putString("server_ip", formattedIp).apply()
                                 serverIp = formattedIp
@@ -198,6 +210,16 @@ class MainActivity : ComponentActivity() {
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                     return false
+                                }
+
+                                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                                    super.onReceivedError(view, request, error)
+                                    val description = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                        error?.description?.toString() ?: "Connection failed"
+                                    } else {
+                                        "Connection failed"
+                                    }
+                                    Toast.makeText(view?.context, "Connection Error: $description", Toast.LENGTH_LONG).show()
                                 }
                             }
                             
