@@ -23,23 +23,6 @@
     --accent-color: var(--neon-red);
     --accent-glow: rgba(239, 68, 68, 0.3);
 }
-    --bg-dark: #090f1d;
-    --bg-panel: #0f172a;
-    --bg-inner: #020617;
-    --bg-active: #1e293b;
-    
-    --neon-blue: #3b82f6;
-    --neon-green: #10b981;
-    --neon-red: #ef4444;
-    --neon-amber: #fbbf24;
-    
-    --text-primary: #f8fafc;
-    --text-muted: #64748b;
-    --text-body: #cbd5e1;
-    
-    --border-color: rgba(59, 130, 246, 0.12);
-    --border-glow: rgba(239, 68, 68, 0.3); /* Neon Red Glow */
-}
 
 * {
     margin: 0;
@@ -108,8 +91,6 @@ body {
     text-shadow: 0 0 16px var(--accent-glow);
     margin-bottom: 8px;
     animation: logo-pulse 2s infinite ease-in-out;
-}
-
 }
 
 .auth-header h1 {
