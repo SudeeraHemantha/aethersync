@@ -67,7 +67,7 @@ body {
 #auth-screen {
     justify-content: center;
     align-items: center;
-    background: radial-gradient(circle at center, #111e36 0%, var(--bg-dark) 85%);
+    background: radial-gradient(circle at center, rgba(17, 30, 54, 0.45) 0%, rgba(9, 15, 29, 0.6) 85%);
 }
 
 .auth-card {
@@ -1769,17 +1769,17 @@ body {
 }
 
 .sidebar, .chat-pane, .auth-card, .slide-panel {
-    background-color: rgba(9, 15, 29, 0.7) !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background-color: rgba(9, 15, 29, 0.35) !important;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     border: 1px solid rgba(59, 130, 246, 0.15) !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* Sidebar & Header glass details */
 .sidebar-header, .chat-header, .chat-input-deck {
-    background-color: rgba(15, 23, 42, 0.5) !important;
-    backdrop-filter: blur(8px);
+    background-color: rgba(15, 23, 42, 0.3) !important;
+    backdrop-filter: blur(4px);
     border-bottom: 1px solid rgba(59, 130, 246, 0.15) !important;
 }
 
