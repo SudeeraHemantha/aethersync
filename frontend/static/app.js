@@ -35,9 +35,6 @@ window.addEventListener('DOMContentLoaded', () => {
     initDevice();
     checkExistingAuth();
     
-    // Start layout diagnostic overlay
-    startDebugOverlay();
-
     // Trigger Cyberpunk Boot Diagnostic Sequence
     runBootDiagnosticSequence();
     
@@ -2096,35 +2093,6 @@ function runBootDiagnosticSequence() {
     setTimeout(printNextLog, 150);
 }
 
-function startDebugOverlay() {
-    setInterval(() => {
-        const overlay = document.getElementById('debug-overlay');
-        if (!overlay) return;
-        
-        const body = document.body;
-        const appContainer = document.getElementById('app-container');
-        const authScreen = document.getElementById('auth-screen');
-        const mainScreen = document.getElementById('main-screen');
-        const bootScreen = document.getElementById('cyber-boot-screen');
-        
-        let activeScreen = "None";
-        if (authScreen && authScreen.classList.contains('active')) activeScreen = "auth-screen";
-        if (mainScreen && mainScreen.classList.contains('active')) activeScreen = "main-screen";
-        
-        overlay.innerHTML = `
-            <strong>AetherSync Debug</strong><br>
-            Body size: ${body.clientWidth}x${body.clientHeight}<br>
-            AppContainer size: ${appContainer ? appContainer.clientWidth + 'x' + appContainer.clientHeight : 'missing'}<br>
-            AppContainer display: ${appContainer ? window.getComputedStyle(appContainer).display : 'N/A'}<br>
-            Active Screen: ${activeScreen}<br>
-            Auth Screen display: ${authScreen ? window.getComputedStyle(authScreen).display : 'N/A'}<br>
-            Main Screen display: ${mainScreen ? window.getComputedStyle(mainScreen).display : 'N/A'}<br>
-            Boot Screen active: ${bootScreen ? window.getComputedStyle(bootScreen).display + ' (op: ' + window.getComputedStyle(bootScreen).opacity + ')' : 'N/A'}<br>
-            Token saved: ${!!localStorage.getItem(KEY_TOKEN)}<br>
-            Username: ${localStorage.getItem(KEY_USERNAME) || 'none'}
-        `;
-    }, 300);
-}
 
 
 
