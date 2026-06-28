@@ -65,12 +65,12 @@ body {
 /* AUTHENTICATION & PIN PAIRING */
 /* ------------------------------------------------------------- */
 #auth-screen {
-    justify-content: center;
-    align-items: center;
     background: radial-gradient(circle at center, rgba(17, 30, 54, 0.45) 0%, rgba(9, 15, 29, 0.6) 85%);
     overflow-y: auto;
     padding: 24px 16px;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
 }
 
 .auth-card {
@@ -82,6 +82,7 @@ body {
     max-width: 440px;
     padding: 32px;
     box-sizing: border-box;
+    margin: auto;
 }
 
 .auth-header {
