@@ -1768,7 +1768,7 @@ body {
     z-index: 1;
 }
 
-.sidebar, .chat-pane, .auth-card, .slide-panel {
+.sidebar, .auth-card, .slide-panel {
     background-color: rgba(9, 15, 29, 0.35) !important;
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
@@ -1777,7 +1777,7 @@ body {
 }
 
 /* Sidebar & Header glass details */
-.sidebar-header, .chat-header, .chat-input-deck {
+.sidebar-header {
     background-color: rgba(15, 23, 42, 0.3) !important;
     backdrop-filter: blur(4px);
     border-bottom: 1px solid rgba(59, 130, 246, 0.15) !important;
