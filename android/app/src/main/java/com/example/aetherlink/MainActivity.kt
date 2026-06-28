@@ -228,6 +228,20 @@ class MainActivity : ComponentActivity() {
                                     request.grant(request.resources)
                                 }
 
+                                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                    val msg = consoleMessage?.message() ?: ""
+                                    val source = consoleMessage?.sourceId() ?: ""
+                                    val line = consoleMessage?.lineNumber() ?: 0
+                                    val level = consoleMessage?.messageLevel()
+                                    
+                                    android.util.Log.d("WebViewConsole", "[$level] $msg ($source:$line)")
+                                    
+                                    if (level == ConsoleMessage.MessageLevel.ERROR) {
+                                        Toast.makeText(this@MainActivity, "JS Error: $msg\nAt: $source:$line", Toast.LENGTH_LONG).show()
+                                    }
+                                    return true
+                                }
+
                                 override fun onShowFileChooser(
                                     webView: WebView?,
                                     filePathCallback: ValueCallback<Array<Uri>>?,

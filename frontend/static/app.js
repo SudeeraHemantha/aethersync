@@ -1857,11 +1857,13 @@ function handleTypingIndicator() {
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
         isTypingStateSent = false;
-        socket.send(JSON.stringify({
-            type: "typing",
-            chat_id: activeChatId,
-            typing: false
-        }));
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                type: "typing",
+                chat_id: activeChatId,
+                typing: false
+            }));
+        }
     }, 1500);
 }
 
