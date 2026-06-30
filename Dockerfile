@@ -31,4 +31,4 @@ RUN mkdir -p /app/data && chmod -R 777 /app/data
 EXPOSE 7860
 
 # Start command
-CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-7860}"]
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-7860} --proxy-headers --forwarded-allow-ips '*'"]
