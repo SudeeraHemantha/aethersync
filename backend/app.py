@@ -1,5 +1,9 @@
 import os
 import sys
+
+# Ensure the backend directory is in the Python path for production imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import uuid
 import random
 import shutil
