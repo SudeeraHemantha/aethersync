@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aethersync-cache-v18';
+const CACHE_NAME = 'aethersync-cache-v21';
 const PRE_CACHE_ASSETS = [
   '/',
   '/static/style.css',
@@ -42,11 +42,20 @@ self.addEventListener('fetch', (event) => {
   }
   
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request);
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        // Cache the new version if it is a successful GET request
+        if (networkResponse.status === 200 && event.request.method === 'GET') {
+          const cacheCopy = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, cacheCopy);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Fallback to cache if offline
+        return caches.match(event.request);
+      })
   );
 });

@@ -2,7 +2,7 @@ import os
 import sqlite3
 import hashlib
 
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "aethersync.db"))
+DB_PATH = os.environ.get("AETHERSYNC_DB_PATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "aethersync.db")))
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
@@ -131,6 +131,21 @@ def init_db():
 
     try:
         cursor.execute("ALTER TABLE messages ADD COLUMN is_delivered INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN reply_to_id INTEGER DEFAULT NULL")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN deleted_by TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
 

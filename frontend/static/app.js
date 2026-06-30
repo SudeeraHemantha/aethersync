@@ -4,6 +4,7 @@ const KEY_TOKEN = 'aethersync_token';
 const KEY_USERNAME = 'aethersync_username';
 const KEY_DEVICE_ID = 'aethersync_device_id';
 const KEY_DEVICE_NAME = 'aethersync_device_name';
+const KEY_ROLE = 'aethersync_role';
 
 let socket = null;
 let activeChatId = null;
@@ -34,6 +35,7 @@ window.addEventListener('DOMContentLoaded', () => {
     initIndexedDB();
     initDevice();
     checkExistingAuth();
+    initEmojiPicker();
     
     // Trigger Cyberpunk Boot Diagnostic Sequence
     runBootDiagnosticSequence();
@@ -610,10 +612,20 @@ function initWebSocket() {
 // Handles incoming WebSocket Events
 function handleWSMessage(data) {
     if (data.type === 'message') {
-        // Play notification sound for incoming messages
         const myUsername = localStorage.getItem(KEY_USERNAME);
-        if (data.sender_name !== myUsername) {
+        const isMuted = localStorage.getItem('mute_notifications_' + data.sender_name) === 'true';
+        
+        if (data.sender_name !== myUsername && !isMuted) {
             playNotificationSound();
+            
+            // Native Push Notifications if tab is hidden
+            if (document.hidden && window.Notification && Notification.permission === "granted") {
+                const avatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${data.sender_name}`;
+                new Notification(data.sender_name, {
+                    body: data.content && data.content.startsWith('[E2EE] ') ? '🔒 Encrypted message' : data.content,
+                    icon: avatar
+                });
+            }
         }
         
         // A new chat message arrived
@@ -626,6 +638,47 @@ function handleWSMessage(data) {
         } else {
             // Re-pull chat list to update badge and message snippet
             pullChatList();
+        }
+    } else if (data.type === 'message_deleted') {
+        if (activeChatId && data.chat_id === activeChatId) {
+            const bubble = document.getElementById('msg-' + data.message_id);
+            if (bubble) {
+                const myRole = localStorage.getItem(KEY_ROLE) || '';
+                const isAdmin = (myRole === 'admin');
+                
+                // Remove option buttons
+                const wrapper = bubble.closest('.message-bubble-wrapper');
+                if (wrapper) {
+                    const actBtn = wrapper.querySelector('.message-actions-menu-btn');
+                    if (actBtn) actBtn.remove();
+                }
+                
+                if (isAdmin) {
+                    bubble.classList.add('deleted-admin');
+                    const bodyEl = bubble.querySelector('.body');
+                    if (bodyEl) {
+                        const originalText = bubble.getAttribute('data-content') || '';
+                        bodyEl.innerHTML = `🚫 Deleted: <span style="text-decoration: line-through; opacity: 0.7;">${escapeHtml(originalText)}</span> <span class="recover-btn-link" onclick="event.stopPropagation(); recoverMessage(${data.message_id})">Recover</span>`;
+                    }
+                } else {
+                    bubble.classList.add('deleted');
+                    const bodyEl = bubble.querySelector('.body');
+                    if (bodyEl) {
+                        bodyEl.innerHTML = `🚫 This message was deleted`;
+                    }
+                }
+            }
+        }
+    } else if (data.type === 'message_recovered') {
+        if (activeChatId && data.message && data.message.chat_id === activeChatId) {
+            const oldBubble = document.getElementById('msg-' + data.message.id);
+            if (oldBubble) {
+                const wrapper = oldBubble.closest('.message-bubble-wrapper');
+                if (wrapper) {
+                    wrapper.remove();
+                }
+                appendMessageBubble(data.message);
+            }
         }
     } else if (data.type === 'read_receipt') {
         // A read receipt was sent by other participant
@@ -666,6 +719,14 @@ function showDashboard(username) {
     document.getElementById('my-username').textContent = username;
     document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/adventurer/svg?seed=${username}`;
     showScreen('main-screen');
+    
+    // Request notification permission
+    if (window.Notification && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+    
+    // Apply experimental labs UI displays
+    applyLabsUIVisibility();
     
     // Connect WebSockets
     initWebSocket();
@@ -772,6 +833,22 @@ async function openConversation(chatId, name, avatarUrl, isOnline) {
     activeChatId = chatId;
     activeChatOnline = (isOnline === 1);
     
+    // Close contact profile drawer
+    const profilePanel = document.getElementById('contact-profile-panel');
+    if (profilePanel) {
+        profilePanel.classList.remove('open');
+    }
+    
+    // Apply custom Accent Color override for this contact
+    const container = document.getElementById('active-chat-container');
+    if (container) {
+        container.className = 'active-chat-container chat-active';
+        const savedAccent = localStorage.getItem('chat_accent_' + name) || '';
+        if (savedAccent) {
+            container.classList.add('accent-' + savedAccent);
+        }
+    }
+    
     // Update E2EE UI state
     const e2eeBtn = document.getElementById('e2ee-toggle-btn');
     if (e2eeBtn) {
@@ -856,8 +933,25 @@ function appendMessageBubble(msg) {
         }
     }
 
+    const wrapper = document.createElement('div');
+    wrapper.className = `message-bubble-wrapper ${isOutgoing ? 'outgoing' : 'incoming'}`;
+    wrapper.id = `wrapper-${msg.id || msg.localId}`;
+
     const div = document.createElement('div');
     div.className = `message-bubble ${isOutgoing ? 'outgoing' : 'incoming'}`;
+    
+    let isDeleted = (msg.is_deleted === 1);
+    const myRole = localStorage.getItem(KEY_ROLE) || '';
+    const isAdmin = (myRole === 'admin');
+    
+    if (isDeleted) {
+        if (isAdmin) {
+            div.className += ' deleted-admin';
+        } else {
+            div.className += ' deleted';
+        }
+    }
+    
     div.id = `msg-${msg.id || msg.localId}`;
     div.setAttribute('data-content', msg.content);
     
@@ -892,90 +986,140 @@ function appendMessageBubble(msg) {
     let bodyContent = "";
     const msgType = msg.msg_type || msg.type;
     
-    if (msgType === 'text') {
-        if (msg.content && msg.content.startsWith('[E2EE] ')) {
-            const msgTextId = `e2ee-msg-${msg.id}-${Math.random().toString(36).substr(2, 9)}`;
-            bodyContent = `<span id="${msgTextId}" class="e2ee-locked-message">🔒 Encrypted message (no key)</span>`;
-            
-            // Decrypt asynchronously
-            const chatId = msg.chat_id || activeChatId;
-            const key = window.e2eeKeys[chatId];
-            if (key) {
-                const cipherPayload = msg.content.substring(7); // Remove "[E2EE] "
-                decryptMessage(cipherPayload, key).then(decryptedText => {
-                    const textEl = document.getElementById(msgTextId);
-                    if (textEl) {
-                        textEl.textContent = decryptedText;
-                        textEl.classList.remove('e2ee-locked-message');
-                        // Add green badge
-                        const badge = document.createElement('span');
-                        badge.className = 'e2ee-badge';
-                        badge.textContent = '🛡️ E2EE';
-                        textEl.appendChild(badge);
-                    }
-                }).catch(err => {
-                    console.error("Decryption error:", err);
-                    const textEl = document.getElementById(msgTextId);
-                    if (textEl) {
-                        textEl.textContent = "❌ Decryption failed (bad key)";
-                    }
-                });
-            }
+    if (isDeleted) {
+        if (isAdmin) {
+            bodyContent = `🚫 Deleted: <span style="text-decoration: line-through; opacity: 0.7;">${escapeHtml(msg.content)}</span> <span class="recover-btn-link" onclick="event.stopPropagation(); recoverMessage(${msg.id})">Recover</span>`;
         } else {
-            bodyContent = escapeHtml(msg.content);
+            bodyContent = `🚫 This message was deleted`;
         }
-    } else if (msgType === 'image') {
-        bodyContent = `
-            <div class="media-card">
-                <img src="${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}" onclick="window.open(this.src)" style="cursor: pointer;">
-            </div>
-            <div class="media-caption">${escapeHtml(msg.content)}</div>
-        `;
-    } else if (msgType === 'video') {
-        bodyContent = `
-            <div class="media-card">
-                <video src="${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}" controls></video>
-            </div>
-            <div class="media-caption">${escapeHtml(msg.content)}</div>
-        `;
-    } else if (msgType === 'document') {
-        const sizeStr = formatBytes(msg.size_bytes);
-        bodyContent = `
-            <div class="doc-card" onclick="window.open('${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')" style="cursor: pointer;">
-                <span class="doc-icon">📄</span>
-                <div class="doc-info">
-                     <h4>${escapeHtml(msg.content)}</h4>
-                     <span>${sizeStr}</span>
+    } else {
+        if (msgType === 'text') {
+            if (msg.content && msg.content.startsWith('[E2EE] ')) {
+                const msgTextId = `e2ee-msg-${msg.id}-${Math.random().toString(36).substr(2, 9)}`;
+                bodyContent = `<span id="${msgTextId}" class="e2ee-locked-message">🔒 Encrypted message (no key)</span>`;
+                
+                // Decrypt asynchronously
+                const chatId = msg.chat_id || activeChatId;
+                const key = window.e2eeKeys[chatId];
+                if (key) {
+                    const cipherPayload = msg.content.substring(7); // Remove "[E2EE] "
+                    decryptMessage(cipherPayload, key).then(decryptedText => {
+                        const textEl = document.getElementById(msgTextId);
+                        if (textEl) {
+                            textEl.textContent = decryptedText;
+                            textEl.classList.remove('e2ee-locked-message');
+                            
+                            // Check for Frequency Muffle focus mode
+                            if (localStorage.getItem('labs_muffle') === 'true' && !isOutgoing) {
+                                textEl.closest('.message-bubble').classList.add('muffled');
+                                const scrambled = scrambleString(decryptedText);
+                                textEl.innerHTML = `<span id="muffle-${msg.id}">${scrambled}</span> <span class="muffle-tune-link" onclick="event.stopPropagation(); tuneMuffledSignal('muffle-${msg.id}', '${escapeJs(decryptedText)}')">Tune Signal</span>`;
+                            } else {
+                                // Add green badge
+                                const badge = document.createElement('span');
+                                badge.className = 'e2ee-badge';
+                                badge.textContent = '🛡️ E2EE';
+                                textEl.appendChild(badge);
+                            }
+                        }
+                    }).catch(err => {
+                        console.error("Decryption error:", err);
+                        const textEl = document.getElementById(msgTextId);
+                        if (textEl) {
+                            textEl.textContent = "❌ Decryption failed (bad key)";
+                        }
+                    });
+                }
+            } else {
+                if (localStorage.getItem('labs_muffle') === 'true' && !isOutgoing) {
+                    div.className += ' muffled';
+                    const scrambled = scrambleString(msg.content);
+                    bodyContent = `<span id="muffle-${msg.id}">${scrambled}</span> <span class="muffle-tune-link" onclick="event.stopPropagation(); tuneMuffledSignal('muffle-${msg.id}', '${escapeJs(msg.content)}')">Tune Signal</span>`;
+                } else {
+                    bodyContent = escapeHtml(msg.content);
+                }
+            }
+        } else if (msgType === 'image' && msg.content === '[CLOAKED]' && localStorage.getItem('labs_cloak') === 'true') {
+            bodyContent = `
+                <div class="media-card stego-card" style="position: relative; overflow: hidden; border-radius: 8px;">
+                    <img id="cloak-img-${msg.id}" src="${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}" style="filter: hue-rotate(90deg) contrast(1.5); cursor: pointer; max-height: 200px; object-fit: cover;" onclick="revealCloakedMessage(${msg.id}, '${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')">
+                    <div class="stego-overlay" id="cloak-text-${msg.id}" style="display: none; position: absolute; inset: 0; background: rgba(8, 12, 21, 0.94); color: #10b981; font-family: monospace; padding: 12px; font-size: 11px; overflow-y: auto; text-align: left; box-sizing: border-box; border: 1px solid var(--accent-color);"></div>
                 </div>
-            </div>
-        `;
-    } else if (msgType === 'audio') {
-        const uniqueId = `audio-${msg.id}`;
-        bodyContent = `
-            <div class="audio-player-bubble neon-audio-player" id="${uniqueId}">
-                <button class="audio-btn play-pause-btn audio-ctrl-btn" onclick="toggleAudioPlay(this, '${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')">▶</button>
-                <div class="audio-wave-container audio-wave-bars" onclick="seekAudio(event, this)">
-                    <div class="audio-track-fill" style="display: none;"></div>
-                    <div class="audio-mock-waveform" style="display: flex; align-items: center; gap: 3px; width: 100%; height: 100%;">
-                        <span class="audio-wave-bar" style="height: 10px;"></span>
-                        <span class="audio-wave-bar" style="height: 22px;"></span>
-                        <span class="audio-wave-bar" style="height: 14px;"></span>
-                        <span class="audio-wave-bar" style="height: 20px;"></span>
-                        <span class="audio-wave-bar" style="height: 18px;"></span>
-                        <span class="audio-wave-bar" style="height: 12px;"></span>
-                        <span class="audio-wave-bar" style="height: 20px;"></span>
-                        <span class="audio-wave-bar" style="height: 16px;"></span>
-                        <span class="audio-wave-bar" style="height: 24px;"></span>
-                        <span class="audio-wave-bar" style="height: 10px;"></span>
+                <div style="font-size: 10px; color: var(--accent-color); margin-top: 6px; text-align: center; font-weight: bold; cursor: pointer;" onclick="revealCloakedMessage(${msg.id}, '${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')">🕵️ DECODE CLOAKED SIGNAL</div>
+            `;
+        } else if (msgType === 'image') {
+            bodyContent = `
+                <div class="media-card">
+                    <img src="${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}" onclick="window.open(this.src)" style="cursor: pointer;">
+                </div>
+                <div class="media-caption">${escapeHtml(msg.content)}</div>
+            `;
+        } else if (msgType === 'video') {
+            bodyContent = `
+                <div class="media-card">
+                    <video src="${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}" controls></video>
+                </div>
+                <div class="media-caption">${escapeHtml(msg.content)}</div>
+            `;
+        } else if (msgType === 'document') {
+            const sizeStr = formatBytes(msg.size_bytes);
+            bodyContent = `
+                <div class="doc-card" onclick="window.open('${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')" style="cursor: pointer;">
+                    <span class="doc-icon">📄</span>
+                    <div class="doc-info">
+                         <h4>${escapeHtml(msg.content)}</h4>
+                         <span>${sizeStr}</span>
                     </div>
                 </div>
-                <button class="audio-speed-btn audio-ctrl-btn" onclick="toggleAudioSpeed(this)">1.0x</button>
-                <audio style="display: none;"></audio>
+            `;
+        } else if (msgType === 'audio') {
+            const uniqueId = `audio-${msg.id}`;
+            bodyContent = `
+                <div class="audio-player-bubble neon-audio-player" id="${uniqueId}">
+                    <button class="audio-btn play-pause-btn audio-ctrl-btn" onclick="toggleAudioPlay(this, '${msg.file_path}?token=${localStorage.getItem(KEY_TOKEN)}')">▶</button>
+                    <div class="audio-wave-container audio-wave-bars" onclick="seekAudio(event, this)">
+                        <div class="audio-track-fill" style="display: none;"></div>
+                        <div class="audio-mock-waveform" style="display: flex; align-items: center; gap: 3px; width: 100%; height: 100%;">
+                            <span class="audio-wave-bar" style="height: 10px;"></span>
+                            <span class="audio-wave-bar" style="height: 22px;"></span>
+                            <span class="audio-wave-bar" style="height: 14px;"></span>
+                            <span class="audio-wave-bar" style="height: 20px;"></span>
+                            <span class="audio-wave-bar" style="height: 18px;"></span>
+                            <span class="audio-wave-bar" style="height: 12px;"></span>
+                            <span class="audio-wave-bar" style="height: 20px;"></span>
+                            <span class="audio-wave-bar" style="height: 16px;"></span>
+                            <span class="audio-wave-bar" style="height: 24px;"></span>
+                            <span class="audio-wave-bar" style="height: 10px;"></span>
+                        </div>
+                    </div>
+                    <button class="audio-speed-btn audio-ctrl-btn" onclick="toggleAudioSpeed(this)">1.0x</button>
+                    <audio style="display: none;"></audio>
+                </div>
+            `;
+        }
+    }
+    
+    // Add replies quote box inside bubble if present
+    let quoteHtml = "";
+    if (localStorage.getItem('labs_replies') === 'true' && msg.reply_to_id) {
+        const parentEl = document.getElementById('msg-' + msg.reply_to_id);
+        let parentUser = "Unknown";
+        let parentText = "Original message";
+        if (parentEl) {
+            parentUser = parentEl.classList.contains('outgoing') ? myUsername : (activeChatTitle() || "Contact");
+            parentText = parentEl.getAttribute('data-content') || "Attachment";
+            if (parentText.startsWith('[E2EE] ')) parentText = "🔒 Encrypted Message";
+        }
+        quoteHtml = `
+            <div class="reply-quote-box" onclick="event.stopPropagation(); scrollToMessage(${msg.reply_to_id})">
+                <span class="reply-quote-user">${escapeHtml(parentUser)}</span>
+                <span class="reply-quote-text">${escapeHtml(parentText)}</span>
             </div>
         `;
     }
     
     div.innerHTML = `
+        ${quoteHtml}
         <div class="body">
             ${bodyContent}
         </div>
@@ -984,7 +1128,30 @@ function appendMessageBubble(msg) {
             ${checkmarkHtml}
         </div>
     `;
-    box.appendChild(div);
+    
+    // Add actions menu button (three dots) next to bubble if not deleted and message has valid database ID
+    if (!isDeleted && msg.id) {
+        const actionsBtn = document.createElement('button');
+        actionsBtn.className = 'message-actions-menu-btn';
+        actionsBtn.innerHTML = '⋮';
+        actionsBtn.title = 'Message options';
+        actionsBtn.onclick = (e) => {
+            e.stopPropagation();
+            toggleMessageActionsDropdown(actionsBtn, msg);
+        };
+        
+        if (isOutgoing) {
+            wrapper.appendChild(actionsBtn);
+            wrapper.appendChild(div);
+        } else {
+            wrapper.appendChild(div);
+            wrapper.appendChild(actionsBtn);
+        }
+    } else {
+        wrapper.appendChild(div);
+    }
+    
+    box.appendChild(wrapper);
 }
 
 function scrollMessagesToBottom() {
@@ -1002,6 +1169,13 @@ async function sendTextMessage(e) {
     const input = document.getElementById('chat-text-input');
     const content = input.value.trim();
     if (!content) return;
+    
+    // Check if Steganographic Cloak is enabled and active
+    if (localStorage.getItem('labs_cloak') === 'true' && window.isStealthModeActive) {
+        sendCloakedMessage(content);
+        input.value = "";
+        return;
+    }
     
     input.value = "";
     
@@ -1025,6 +1199,9 @@ async function sendTextMessage(e) {
         }
     }
     
+    const replyToId = window.replyToMsg ? window.replyToMsg.id : null;
+    clearReplyQuote();
+    
     // Intercept offline messages
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         const localId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1037,7 +1214,8 @@ async function sendTextMessage(e) {
             content: finalContent,
             type: "text",
             timestamp: new Date().toISOString(),
-            is_offline_pending: true
+            is_offline_pending: true,
+            reply_to_id: replyToId
         };
         
         // Write to IndexedDB queue
@@ -1062,7 +1240,8 @@ async function sendTextMessage(e) {
         socket.send(JSON.stringify({
             type: "text",
             chat_id: activeChatId,
-            content: finalContent
+            content: finalContent,
+            reply_to_id: replyToId
         }));
     }
 }
@@ -1591,6 +1770,12 @@ function toggleSettingsModal() {
     
     const soundEnabled = localStorage.getItem('aethersync_sound_enabled') !== 'false';
     document.getElementById('settings-sound-alert').checked = soundEnabled;
+    
+    // Prefill Experimental Labs
+    document.getElementById('labs-replies-toggle').checked = localStorage.getItem('labs_replies') === 'true';
+    document.getElementById('labs-cloak-toggle').checked = localStorage.getItem('labs_cloak') === 'true';
+    document.getElementById('labs-muffle-toggle').checked = localStorage.getItem('labs_muffle') === 'true';
+    document.getElementById('labs-terminal-toggle').checked = localStorage.getItem('labs_terminal') === 'true';
 }
 
 const ACCENT_MAP = {
@@ -1615,6 +1800,20 @@ async function saveSettings() {
     const soundEnabled = document.getElementById('settings-sound-alert').checked;
     
     localStorage.setItem('aethersync_sound_enabled', soundEnabled);
+    
+    // Save Experimental Labs
+    const labsReplies = document.getElementById('labs-replies-toggle').checked;
+    const labsCloak = document.getElementById('labs-cloak-toggle').checked;
+    const labsMuffle = document.getElementById('labs-muffle-toggle').checked;
+    const labsTerminal = document.getElementById('labs-terminal-toggle').checked;
+    
+    localStorage.setItem('labs_replies', labsReplies);
+    localStorage.setItem('labs_cloak', labsCloak);
+    localStorage.setItem('labs_muffle', labsMuffle);
+    localStorage.setItem('labs_terminal', labsTerminal);
+    
+    // Apply labs display states
+    applyLabsUIVisibility();
     
     const token = localStorage.getItem(KEY_TOKEN);
     try {
@@ -2094,8 +2293,976 @@ function runBootDiagnosticSequence() {
     
     setTimeout(printNextLog, 150);
 }
+// -------------------------------------------------------------
+// EMOJI PICKER IMPLEMENTATION
+// -------------------------------------------------------------
+const EMOJI_LIST = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟',
+    '👍', '👎', '❤️', '🔥', '👏', '🎉', '🚀', '💡', '💩', '💯', '✨', '🌟', '💔', '✔️', '❌', '👀'
+];
 
+function initEmojiPicker() {
+    const popover = document.getElementById('emoji-picker-popover');
+    if (!popover) return;
+    
+    popover.innerHTML = "";
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'emoji-picker-grid';
+    
+    EMOJI_LIST.forEach(emoji => {
+        const span = document.createElement('span');
+        span.className = 'emoji-item';
+        span.textContent = emoji;
+        span.onclick = () => {
+            insertEmoji(emoji);
+        };
+        wrapper.appendChild(span);
+    });
+    popover.appendChild(wrapper);
+    
+    // Close picker when clicking outside
+    document.addEventListener('click', (e) => {
+        const btn = document.getElementById('emoji-picker-btn');
+        if (popover.classList.contains('active') && !popover.contains(e.target) && e.target !== btn) {
+            popover.classList.remove('active');
+        }
+    });
+}
 
+function toggleEmojiPicker() {
+    const popover = document.getElementById('emoji-picker-popover');
+    if (popover) {
+        popover.classList.toggle('active');
+    }
+}
 
+function insertEmoji(emoji) {
+    const input = document.getElementById('chat-text-input');
+    if (!input) return;
+    
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const val = input.value;
+    
+    input.value = val.substring(0, start) + emoji + val.substring(end);
+    input.focus();
+    
+    const newPos = start + emoji.length;
+    input.setSelectionRange(newPos, newPos);
+}
 
+// -------------------------------------------------------------
+// MESSAGE ACTIONS & MENUS
+// -------------------------------------------------------------
+function toggleMessageActionsDropdown(button, msg) {
+    // Close existing dropdowns
+    const old = document.querySelector('.message-actions-dropdown');
+    if (old) {
+        old.remove();
+        if (old.getAttribute('data-msg-id') === String(msg.id)) return;
+    }
+    
+    const dropdown = document.createElement('div');
+    dropdown.className = 'message-actions-dropdown';
+    dropdown.setAttribute('data-msg-id', msg.id);
+    
+    // Reply option (if labs feature active)
+    if (localStorage.getItem('labs_replies') === 'true' && msg.is_deleted !== 1) {
+        const replyBtn = document.createElement('button');
+        replyBtn.className = 'message-action-item';
+        replyBtn.textContent = '💬 Reply';
+        replyBtn.onclick = () => {
+            setReplyQuote(msg);
+            dropdown.remove();
+        };
+        dropdown.appendChild(replyBtn);
+    }
 
+    // Copy option (text only)
+    const msgType = msg.msg_type || msg.type;
+    if (msgType === 'text') {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'message-action-item';
+        copyBtn.textContent = '📋 Copy Text';
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(msg.content);
+            showToast("Copied to clipboard!");
+            dropdown.remove();
+        };
+        dropdown.appendChild(copyBtn);
+    }
+    
+    // Forward option
+    const forwardBtn = document.createElement('button');
+    forwardBtn.className = 'message-action-item';
+    forwardBtn.textContent = '✈ Forward';
+    forwardBtn.onclick = () => {
+        openForwardModal(msg);
+        dropdown.remove();
+    };
+    dropdown.appendChild(forwardBtn);
+    
+    // Delete option (if not already deleted)
+    if (msg.is_deleted !== 1) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'message-action-item';
+        deleteBtn.style.color = '#ef4444';
+        deleteBtn.textContent = '🗑 Delete';
+        deleteBtn.onclick = () => {
+            openDeleteChoiceModal(msg);
+            dropdown.remove();
+        };
+        dropdown.appendChild(deleteBtn);
+    }
+    
+    document.body.appendChild(dropdown);
+    
+    const rect = button.getBoundingClientRect();
+    dropdown.style.top = `${rect.bottom + window.scrollY}px`;
+    dropdown.style.left = `${rect.left + window.scrollX - 50}px`;
+    
+    // Close dropdown on click outside
+    const closeHandler = () => {
+        dropdown.remove();
+        document.removeEventListener('click', closeHandler);
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 10);
+}
+
+// Delete and Recover API Requests
+let pendingDeleteMessageId = null;
+
+function openDeleteChoiceModal(msg) {
+    pendingDeleteMessageId = msg.id;
+    const modal = document.getElementById('delete-choice-modal');
+    const everyoneBtn = document.getElementById('delete-everyone-btn');
+    
+    if (modal && everyoneBtn) {
+        const myUsername = localStorage.getItem(KEY_USERNAME);
+        const myRole = localStorage.getItem(KEY_ROLE) || '';
+        
+        // Only sender or admin can delete for everyone
+        if (msg.sender_name === myUsername || myRole === 'admin') {
+            everyoneBtn.disabled = false;
+            everyoneBtn.style.opacity = '1';
+            everyoneBtn.style.cursor = 'pointer';
+        } else {
+            everyoneBtn.disabled = true;
+            everyoneBtn.style.opacity = '0.5';
+            everyoneBtn.style.cursor = 'not-allowed';
+        }
+        
+        modal.classList.add('active');
+    }
+}
+
+function closeDeleteChoiceModal() {
+    pendingDeleteMessageId = null;
+    const modal = document.getElementById('delete-choice-modal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+function executeDeleteMessage(deleteType) {
+    if (pendingDeleteMessageId) {
+        deleteMessage(pendingDeleteMessageId, deleteType);
+    }
+    closeDeleteChoiceModal();
+}
+
+async function deleteMessage(messageId, deleteType) {
+    const token = localStorage.getItem(KEY_TOKEN);
+    try {
+        const res = await fetch('/api/messages/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ message_id: messageId, delete_type: deleteType })
+        });
+        if (!res.ok) {
+            const data = await res.json();
+            showToast(data.detail || "Failed to delete message");
+        } else {
+            if (deleteType === 'me') {
+                // Remove message wrapper bubble from local DOM immediately
+                const wrapper = document.getElementById('wrapper-' + messageId);
+                if (wrapper) wrapper.remove();
+                showToast("Message deleted for you.");
+            }
+        }
+    } catch (err) {
+        console.error("Delete failed:", err);
+        showToast("Connection error. Delete failed.");
+    }
+}
+
+async function recoverMessage(messageId) {
+    const token = localStorage.getItem(KEY_TOKEN);
+    try {
+        const res = await fetch('/api/messages/recover', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ message_id: messageId })
+        });
+        if (!res.ok) {
+            const data = await res.json();
+            showToast(data.detail || "Failed to recover message");
+        }
+    } catch (err) {
+        console.error("Recovery failed:", err);
+        showToast("Connection error. Recovery failed.");
+    }
+}
+
+// -------------------------------------------------------------
+// FORWARD MESSAGE SYSTEM
+// -------------------------------------------------------------
+let pendingForwardMessage = null;
+
+function toggleForwardModal() {
+    const modal = document.getElementById('forward-message-modal');
+    if (modal) {
+        modal.classList.toggle('active');
+        if (modal.classList.contains('active')) {
+            document.getElementById('forward-search-input').value = "";
+            renderForwardContactsList();
+        }
+    }
+}
+
+function openForwardModal(msg) {
+    pendingForwardMessage = msg;
+    toggleForwardModal();
+}
+
+function renderForwardContactsList() {
+    const list = document.getElementById('forward-contacts-list');
+    if (!list) return;
+    list.innerHTML = "";
+    
+    const contacts = contactsData || [];
+    if (contacts.length === 0) {
+        list.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 11px;">No contacts found</div>`;
+        return;
+    }
+    
+    contacts.forEach(contact => {
+        const item = document.createElement('div');
+        item.className = 'forward-contact-item';
+        item.setAttribute('data-username', contact.username);
+        
+        const avatar = contact.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${contact.username}`;
+        
+        item.innerHTML = `
+            <div class="contact-info">
+                <img src="${avatar}" alt="avatar">
+                <div>
+                    <div style="font-weight: bold; font-size: 13px; color: var(--text-primary);">${escapeHtml(contact.username)}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">${contact.is_online === 1 ? 'Online' : 'Offline'}</div>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-secondary-small" onclick="event.stopPropagation(); executeForward('${contact.username}')">Send</button>
+        `;
+        list.appendChild(item);
+    });
+}
+
+function filterForwardContacts() {
+    const q = document.getElementById('forward-search-input').value.toLowerCase().trim();
+    const items = document.querySelectorAll('.forward-contact-item');
+    items.forEach(item => {
+        const username = item.getAttribute('data-username').toLowerCase();
+        if (username.includes(q)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+async function executeForward(username) {
+    if (!pendingForwardMessage) return;
+    const token = localStorage.getItem(KEY_TOKEN);
+    try {
+        const createRes = await fetch('/api/chats/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                recipient_username: username,
+                type: 'direct'
+            })
+        });
+        const chat = await createRes.json();
+        const chatId = chat.chat_id;
+        
+        const msgType = pendingForwardMessage.msg_type || pendingForwardMessage.type;
+        const msgPayload = {
+            chat_id: chatId,
+            content: pendingForwardMessage.content,
+            type: msgType,
+            file_path: pendingForwardMessage.file_path,
+            size_bytes: pendingForwardMessage.size_bytes || 0
+        };
+        
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                type: msgType,
+                chat_id: chatId,
+                content: pendingForwardMessage.content,
+                file_path: pendingForwardMessage.file_path,
+                size_bytes: pendingForwardMessage.size_bytes || 0
+            }));
+        } else {
+            await fetch(`/api/messages/send`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(msgPayload)
+            });
+        }
+        
+        showToast(`Message forwarded to ${username}!`);
+        toggleForwardModal();
+        
+        if (activeChatId === chatId) {
+            openConversation(chatId, username, `https://api.dicebear.com/7.x/adventurer/svg?seed=${username}`, 1);
+        } else {
+            pullChatList();
+        }
+    } catch (err) {
+        console.error("Forwarding failed:", err);
+        showToast("Failed to forward message.");
+    }
+}
+
+// -------------------------------------------------------------
+// PROFILE SLIDING DRAWER AND CUSTOM SETTINGS
+// -------------------------------------------------------------
+let activeProfileDrawerUsername = null;
+
+async function openContactProfileDrawer() {
+    const panel = document.getElementById('contact-profile-panel');
+    if (!panel) return;
+    
+    const username = activeChatTitle();
+    if (!username) return;
+    
+    if (panel.classList.contains('open') && activeProfileDrawerUsername === username) {
+        panel.classList.remove('open');
+        return;
+    }
+    
+    activeProfileDrawerUsername = username;
+    
+    // Set baseline static fields
+    document.getElementById('profile-drawer-username').textContent = username;
+    document.getElementById('profile-drawer-avatar').src = document.getElementById('active-chat-avatar').src;
+    document.getElementById('profile-drawer-status').textContent = document.getElementById('active-chat-status').textContent;
+    document.getElementById('profile-drawer-status').className = 'status-badge ' + (document.getElementById('active-chat-status').textContent.toLowerCase() === 'online' ? 'online' : 'offline');
+    document.getElementById('profile-drawer-bio').textContent = "Loading bio...";
+    
+    // Populate sliders
+    const isMuted = localStorage.getItem('mute_notifications_' + username) === 'true';
+    document.getElementById('profile-mute-toggle').checked = isMuted;
+    
+    const currentAccent = localStorage.getItem('chat_accent_' + username) || '';
+    document.querySelectorAll('#contact-profile-panel .accent-dot').forEach(dot => {
+        dot.classList.remove('active');
+        if (dot.classList.contains('color-' + currentAccent)) {
+            dot.classList.add('active');
+        }
+    });
+    
+    // Fetch live details
+    const token = localStorage.getItem(KEY_TOKEN);
+    try {
+        const res = await fetch(`/api/users/profile/${username}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            document.getElementById('profile-drawer-bio').textContent = data.status_text || "Hey there! I am using AetherLink.";
+            if (data.avatar_url) {
+                document.getElementById('profile-drawer-avatar').src = data.avatar_url;
+            }
+        } else {
+            document.getElementById('profile-drawer-bio').textContent = "Hey there! I am using AetherLink.";
+        }
+    } catch (err) {
+        console.error("Failed to fetch profile bio:", err);
+        document.getElementById('profile-drawer-bio').textContent = "Hey there! I am using AetherLink.";
+    }
+    
+    panel.classList.add('open');
+}
+
+function activeChatTitle() {
+    const el = document.getElementById('active-chat-title');
+    return el ? el.textContent : null;
+}
+
+function toggleProfileMute() {
+    if (!activeProfileDrawerUsername) return;
+    const isChecked = document.getElementById('profile-mute-toggle').checked;
+    localStorage.setItem('mute_notifications_' + activeProfileDrawerUsername, isChecked);
+    showToast(`${activeProfileDrawerUsername} has been ${isChecked ? 'muted' : 'unmuted'}.`);
+}
+
+function setProfileChatAccent(accent) {
+    if (!activeProfileDrawerUsername) return;
+    localStorage.setItem('chat_accent_' + activeProfileDrawerUsername, accent);
+    
+    document.querySelectorAll('#contact-profile-panel .accent-dot').forEach(dot => {
+        dot.classList.remove('active');
+        if (dot.classList.contains('color-' + accent)) {
+            dot.classList.add('active');
+        }
+    });
+    
+    const container = document.getElementById('active-chat-container');
+    if (container) {
+        container.className = 'active-chat-container chat-active';
+        if (accent) {
+            container.classList.add('accent-' + accent);
+        }
+    }
+    showToast(`Accent updated for this conversation.`);
+}
+
+async function exportProfileChatHistory() {
+    if (!activeChatId || !activeProfileDrawerUsername) return;
+    const token = localStorage.getItem(KEY_TOKEN);
+    try {
+        const res = await fetch(`/api/messages/history/${activeChatId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const messages = await res.json();
+        
+        let fileContent = `==================================================\n`;
+        fileContent += `AetherSync Chat Log with ${activeProfileDrawerUsername}\n`;
+        fileContent += `Exported on: ${new Date().toLocaleString()}\n`;
+        fileContent += `==================================================\n\n`;
+        
+        messages.forEach(msg => {
+            const time = new Date(msg.timestamp).toLocaleString();
+            const deletedTag = msg.is_deleted === 1 ? " [DELETED]" : "";
+            fileContent += `[${time}] ${msg.sender_name}: ${msg.content}${deletedTag}\n`;
+            if (msg.file_path) {
+                fileContent += ` > Attachment URL: ${msg.file_path}\n`;
+            }
+        });
+        
+        const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `chat_log_${activeProfileDrawerUsername}_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        showToast("Chat history exported successfully!");
+    } catch (err) {
+        console.error("Export chat history failed:", err);
+        showToast("Failed to export chat history.");
+    }
+}
+
+// ============================================================================
+// EXPERIMENTAL LABS MODULES
+// ============================================================================
+
+// 1. LABS UI STATE VISIBILITY
+function applyLabsUIVisibility() {
+    const isTerminalEnabled = localStorage.getItem('labs_terminal') === 'true';
+    const isCloakEnabled = localStorage.getItem('labs_cloak') === 'true';
+    
+    const terminalBtn = document.getElementById('labs-terminal-btn');
+    if (terminalBtn) {
+        terminalBtn.style.display = isTerminalEnabled ? 'inline-block' : 'none';
+    }
+    
+    const cloakBtn = document.getElementById('labs-cloak-btn');
+    if (cloakBtn) {
+        cloakBtn.style.display = isCloakEnabled ? 'inline-block' : 'none';
+    }
+    
+    if (!isTerminalEnabled) {
+        const panel = document.getElementById('cyberdeck-console-panel');
+        if (panel) panel.classList.remove('open');
+    }
+    
+    if (!isCloakEnabled) {
+        window.isStealthModeActive = false;
+        const btn = document.getElementById('labs-cloak-btn');
+        if (btn) btn.classList.remove('active');
+    }
+}
+
+function toggleCyberdeckAvailability() {
+    // Handled reactively on settings save
+}
+
+// 2. THREADED REPLIES
+window.replyToMsg = null;
+
+function setReplyQuote(msg) {
+    window.replyToMsg = msg;
+    const bar = document.getElementById('reply-preview-bar');
+    const userEl = document.getElementById('reply-preview-user');
+    const textEl = document.getElementById('reply-preview-text');
+    
+    if (bar && userEl && textEl) {
+        userEl.textContent = msg.sender_name;
+        let snippet = msg.content;
+        if (snippet.startsWith('[E2EE] ')) snippet = "🔒 Encrypted Message";
+        textEl.textContent = snippet;
+        bar.classList.add('active');
+    }
+}
+
+function clearReplyQuote() {
+    window.replyToMsg = null;
+    const bar = document.getElementById('reply-preview-bar');
+    if (bar) {
+        bar.classList.remove('active');
+    }
+}
+
+function scrollToMessage(msgId) {
+    const el = document.getElementById('msg-' + msgId);
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Flash animation
+        el.style.transition = 'none';
+        el.style.boxShadow = '0 0 20px var(--accent-color)';
+        setTimeout(() => {
+            el.style.transition = 'box-shadow 1s ease';
+            el.style.boxShadow = 'none';
+        }, 100);
+    }
+}
+
+function activeChatTitle() {
+    const el = document.getElementById('active-chat-title');
+    return el ? el.textContent : '';
+}
+
+// Helper to escape inline strings inside JavaScript dynamic content
+function escapeJs(str) {
+    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+}
+
+// 3. FREQUENCY MUFFLE FOCUS MODE
+function scrambleString(str) {
+    const chars = '▖▗▘▙▚▛▜▝▞▟░▒▓█';
+    return str.split('').map(c => {
+        if (c === ' ') return ' ';
+        return chars[Math.floor(Math.random() * chars.length)];
+    }).join('');
+}
+
+function tuneMuffledSignal(elementId, originalText) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    
+    const link = el.nextElementSibling;
+    if (link && link.classList.contains('muffle-tune-link')) {
+        link.remove();
+    }
+    
+    let iterations = 0;
+    const interval = setInterval(() => {
+        el.textContent = originalText.split('').map((char, index) => {
+            if (char === ' ') return ' ';
+            if (index < iterations) return char;
+            const chars = '▖▗▘▙▚▛▜▝▞▟';
+            return chars[Math.floor(Math.random() * chars.length)];
+        }).join('');
+        
+        if (iterations >= originalText.length) {
+            clearInterval(interval);
+            el.textContent = originalText;
+            const bubble = el.closest('.message-bubble');
+            if (bubble) bubble.classList.remove('muffled');
+        }
+        iterations += 1 + Math.floor(originalText.length / 10);
+    }, 40);
+}
+
+// 4. STEGANOGRAPHIC VISUAL CLOAK
+window.isStealthModeActive = false;
+
+function toggleStealthMode() {
+    window.isStealthModeActive = !window.isStealthModeActive;
+    const btn = document.getElementById('labs-cloak-btn');
+    if (btn) {
+        if (window.isStealthModeActive) {
+            btn.classList.add('active');
+            showToast("Stealth Mode Activated. Messages will be cloaked inside static PNG bubbles.");
+        } else {
+            btn.classList.remove('active');
+            showToast("Stealth Mode Deactivated.");
+        }
+    }
+}
+
+async function sendCloakedMessage(plaintext) {
+    if (!activeChatId) return;
+    
+    // Encrypt content first if E2EE is active
+    let finalPayload = plaintext;
+    const e2eeKey = window.e2eeKeys[activeChatId];
+    if (e2eeKey) {
+        try {
+            const encrypted = await encryptMessage(plaintext, e2eeKey);
+            finalPayload = `[E2EE] ${encrypted}`;
+        } catch (err) {
+            console.error("Stego encryption failed, using plain text:", err);
+        }
+    }
+    
+    // 1. Generate Noise Canvas
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(size, size);
+    
+    // Populate with randomized cyberpunk color noise
+    for (let i = 0; i < imgData.data.length; i += 4) {
+        imgData.data[i]     = Math.floor(Math.random() * 50);       // Red: dark base
+        imgData.data[i + 1] = Math.floor(Math.random() * 200 + 55); // Green: bright digital glow
+        imgData.data[i + 2] = Math.floor(Math.random() * 100);      // Blue
+        imgData.data[i + 3] = 255;                                  // Alpha
+    }
+    
+    // 2. Embed finalPayload bytes in LSB of Red Channel
+    const encoder = new TextEncoder();
+    const dataBytes = encoder.encode(finalPayload);
+    
+    // Write 32-bit length header in first 32 pixels
+    const length = dataBytes.length;
+    for (let bit = 0; bit < 32; bit++) {
+        const val = (length >> bit) & 1;
+        const pixelIdx = bit * 4;
+        imgData.data[pixelIdx] = (imgData.data[pixelIdx] & ~1) | val;
+    }
+    
+    // Write message data bits
+    for (let byteIdx = 0; byteIdx < dataBytes.length; byteIdx++) {
+        const byte = dataBytes[byteIdx];
+        for (let bit = 0; bit < 8; bit++) {
+            const val = (byte >> bit) & 1;
+            const pixelIdx = (32 + byteIdx * 8 + bit) * 4;
+            if (pixelIdx < imgData.data.length) {
+                imgData.data[pixelIdx] = (imgData.data[pixelIdx] & ~1) | val;
+            }
+        }
+    }
+    
+    ctx.putImageData(imgData, 0, 0);
+    
+    // 3. Export as Blob and upload
+    canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        
+        const token = localStorage.getItem(KEY_TOKEN);
+        const formData = new FormData();
+        formData.append('file', blob, 'stego_signal.png');
+        
+        try {
+            const res = await fetch('/api/media/upload', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+            if (res.ok) {
+                const uploadInfo = await res.json();
+                const replyToId = window.replyToMsg ? window.replyToMsg.id : null;
+                clearReplyQuote();
+                
+                // Send type image with text description [CLOAKED]
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        type: "image",
+                        chat_id: activeChatId,
+                        content: "[CLOAKED]",
+                        file_path: uploadInfo.file_path,
+                        size_bytes: uploadInfo.size_bytes,
+                        reply_to_id: replyToId
+                    }));
+                }
+            } else {
+                showToast("Failed to upload cloaked image.");
+            }
+        } catch (err) {
+            console.error("Cloaked upload failed:", err);
+            showToast("Error sending cloaked message.");
+        }
+    }, 'image/png');
+}
+
+function revealCloakedMessage(msgId, imgUrl) {
+    const overlay = document.getElementById(`cloak-text-${msgId}`);
+    if (!overlay) return;
+    
+    if (overlay.style.display === 'block') {
+        overlay.style.display = 'none';
+        return;
+    }
+    
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = async function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        
+        try {
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // 1. Read 32-bit length header
+            let length = 0;
+            for (let bit = 0; bit < 32; bit++) {
+                const pixelIdx = bit * 4;
+                const val = imgData.data[pixelIdx] & 1;
+                length |= (val << bit);
+            }
+            
+            if (length <= 0 || length > 100000) {
+                overlay.textContent = "❌ Error: Invalid signal format or corrupted bytes.";
+                overlay.style.display = 'block';
+                return;
+            }
+            
+            // 2. Read message bytes
+            const dataBytes = new Uint8Array(length);
+            for (let byteIdx = 0; byteIdx < length; byteIdx++) {
+                let byteVal = 0;
+                for (let bit = 0; bit < 8; bit++) {
+                    const pixelIdx = (32 + byteIdx * 8 + bit) * 4;
+                    if (pixelIdx < imgData.data.length) {
+                        const val = imgData.data[pixelIdx] & 1;
+                        byteVal |= (val << bit);
+                    }
+                }
+                dataBytes[byteIdx] = byteVal;
+            }
+            
+            const decoder = new TextDecoder();
+            const payloadText = decoder.decode(dataBytes);
+            
+            // 3. Decrypt E2EE if necessary
+            let finalOutput = payloadText;
+            if (payloadText.startsWith('[E2EE] ')) {
+                const key = window.e2eeKeys[activeChatId];
+                if (key) {
+                    try {
+                        const cipherPayload = payloadText.substring(7);
+                        finalOutput = await decryptMessage(cipherPayload, key);
+                        finalOutput = `🛡️ [DECRYPTED E2EE]\n\n${finalOutput}`;
+                    } catch (e) {
+                        finalOutput = "❌ Decryption failed (Missing or bad E2EE Key)";
+                    }
+                } else {
+                    finalOutput = "🔒 Message is E2EE locked (Configure E2EE keys in header to view)";
+                }
+            }
+            
+            overlay.innerHTML = `
+                <div style="font-weight: bold; color: #10b981; border-bottom: 1px solid #10b981; padding-bottom: 4px; margin-bottom: 8px;">SIGNAL DECODED SUCCESSFULLY:</div>
+                <div style="white-space: pre-wrap; line-height: 1.4;">${escapeHtml(finalOutput)}</div>
+            `;
+            overlay.style.display = 'block';
+        } catch (err) {
+            console.error("Reveal cloak decoding failed:", err);
+            overlay.textContent = "❌ Failed to parse pixel stream.";
+            overlay.style.display = 'block';
+        }
+    };
+    img.src = imgUrl;
+}
+
+// 5. CYBERDECK COMMAND TERMINAL Drawer
+function toggleCyberdeckPanel() {
+    const panel = document.getElementById('cyberdeck-console-panel');
+    if (panel) {
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) {
+            const input = document.getElementById('cyberdeck-cmd-input');
+            if (input) input.focus();
+        }
+    }
+}
+
+function handleCyberdeckKey(e) {
+    if (e.key === 'Enter') {
+        const input = document.getElementById('cyberdeck-cmd-input');
+        const cmd = input.value.trim();
+        if (!cmd) return;
+        
+        input.value = "";
+        executeCyberdeckCommand(cmd);
+    }
+}
+
+function printDeckOutput(text, isError = false) {
+    const history = document.getElementById('cyberdeck-history');
+    if (history) {
+        const div = document.createElement('div');
+        div.style.color = isError ? '#ef4444' : '#10b981';
+        div.textContent = text;
+        history.appendChild(div);
+        history.scrollTop = history.scrollHeight;
+    }
+}
+
+async function executeCyberdeckCommand(fullCmd) {
+    printDeckOutput(`> ${fullCmd}`);
+    
+    const parts = fullCmd.split(' ');
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    
+    switch (cmd) {
+        case '/help':
+            printDeckOutput("AVAILABLE COMMANDS:");
+            printDeckOutput("  /help                     Show command guide");
+            printDeckOutput("  /clear                    Clear console outputs");
+            printDeckOutput("  /status                   Display network and session states");
+            printDeckOutput("  /ping                     Check connection ping latency");
+            printDeckOutput("  /accent <red|blue|green>  Set client theme accent color");
+            printDeckOutput("  /role                     Show current session credentials");
+            printDeckOutput("  /deleteall                Delete all messages in active chat");
+            break;
+            
+        case '/clear':
+            const history = document.getElementById('cyberdeck-history');
+            if (history) history.innerHTML = "";
+            break;
+            
+        case '/status':
+            const wsState = socket ? ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][socket.readyState] : "NULL";
+            printDeckOutput(`WS STATE: ${wsState}`);
+            printDeckOutput(`ACTIVE CHAT ID: ${activeChatId || 'NONE'}`);
+            printDeckOutput(`CURRENT USER: ${localStorage.getItem(KEY_USERNAME) || 'NONE'}`);
+            break;
+            
+        case '/ping':
+            const start = Date.now();
+            try {
+                const token = localStorage.getItem(KEY_TOKEN);
+                const res = await fetch('/api/users/profile/admin', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const elapsed = Date.now() - start;
+                    printDeckOutput(`PING SUCCESS: ${elapsed}ms`);
+                } else {
+                    printDeckOutput("PING FAILED: HTTP error", true);
+                }
+            } catch (err) {
+                printDeckOutput(`PING FAILED: ${err.message}`, true);
+            }
+            break;
+            
+        case '/accent':
+            if (args.length < 1) {
+                printDeckOutput("Error: Usage: /accent <red|blue|green|amber>", true);
+                break;
+            }
+            const color = args[0].toLowerCase();
+            if (['red', 'blue', 'green', 'amber'].includes(color)) {
+                setThemeAccent(color);
+                printDeckOutput(`Accent color adjusted to: ${color.toUpperCase()}`);
+            } else {
+                printDeckOutput(`Error: Unsupported accent: ${color}`, true);
+            }
+            break;
+            
+        case '/role':
+            const role = localStorage.getItem(KEY_ROLE) || 'user';
+            printDeckOutput(`YOUR SESSION ROLE: ${role.toUpperCase()}`);
+            break;
+            
+        case '/deleteall':
+            if (!activeChatId) {
+                printDeckOutput("Error: No active chat selected.", true);
+                break;
+            }
+            if (confirm("Are you sure you want to delete all messages in this chat room? This cannot be undone!")) {
+                printDeckOutput("Broadcasting wipe sequence...");
+                try {
+                    const token = localStorage.getItem(KEY_TOKEN);
+                    const res = await fetch(`/api/messages/history/${activeChatId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const historyList = await res.json();
+                        let count = 0;
+                        for (const msg of historyList) {
+                            if (msg.is_deleted !== 1) {
+                                await deleteMessage(msg.id);
+                                count++;
+                            }
+                        }
+                        printDeckOutput(`Wipe complete. Purged ${count} messages.`);
+                    }
+                } catch (err) {
+                    printDeckOutput(`Wipe failed: ${err.message}`, true);
+                }
+            }
+            break;
+            
+        default:
+            printDeckOutput(`Error: Unknown console directive: ${cmd}. Type /help for system guidelines.`, true);
+    }
+}
+
+// 6. CYBER TOAST NOTIFICATIONS
+function showToast(message) {
+    let container = document.getElementById('cyber-toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'cyber-toast-container';
+        container.className = 'cyber-toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'cyber-toast';
+    toast.innerHTML = `
+        <span class="cyber-toast-icon">⚡</span>
+        <span class="cyber-toast-text">${escapeHtml(message)}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Trigger reflow to start transition
+    toast.offsetHeight;
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }, 3000);
+}

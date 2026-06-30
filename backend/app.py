@@ -31,7 +31,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # Global configurations
-ACTIVE_STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "shared_vault"))
+ACTIVE_STORAGE_DIR = os.environ.get("AETHERSYNC_VAULT_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "shared_vault")))
 SHARED_CLIPBOARD = "Welcome to AetherLink! Copy on one device, paste on another."
 # Active sessions: token -> {user_id, username, role}
 active_sessions = {}
@@ -76,6 +76,13 @@ class CreateChatRequest(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     avatar_url: Optional[str] = None
     status_text: Optional[str] = None
+
+class DeleteMessageRequest(BaseModel):
+    message_id: int
+    delete_type: str
+
+class RecoverMessageRequest(BaseModel):
+    message_id: int
 
 # -------------------------------------------------------------
 # WEBSOCKET REAL-TIME CONNECTION MANAGER
@@ -641,7 +648,7 @@ def get_chat_history(chat_id: int, user = Depends(get_current_user)):
     
     # Query history
     cursor.execute("""
-        SELECT id, chat_id, sender_id, sender_name, content, type, file_path, size_bytes, timestamp, is_delivered, is_read 
+        SELECT id, chat_id, sender_id, sender_name, content, type, file_path, size_bytes, timestamp, is_delivered, is_read, is_deleted, reply_to_id, deleted_by 
         FROM messages 
         WHERE chat_id = ? 
         ORDER BY id ASC
@@ -669,7 +676,135 @@ def get_chat_history(chat_id: int, user = Depends(get_current_user)):
         except Exception:
             pass
             
-    return [dict(row) for row in rows]
+    # Redact content of soft-deleted messages for regular users
+    history = []
+    is_admin = (user["role"] == "admin")
+    user_del_marker = f",{user['user_id']},"
+    for row in rows:
+        msg_dict = dict(row)
+        
+        # If deleted for me locally, skip rendering
+        if msg_dict.get("deleted_by") and user_del_marker in msg_dict["deleted_by"]:
+            continue
+            
+        if msg_dict.get("is_deleted") == 1:
+            if not is_admin:
+                msg_dict["content"] = "This message was deleted"
+                msg_dict["file_path"] = None
+                msg_dict["type"] = "text"
+                msg_dict["size_bytes"] = 0
+        history.append(msg_dict)
+        
+    return history
+
+
+@app.post("/api/messages/delete")
+async def delete_message(req: DeleteMessageRequest, user = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT sender_id, chat_id, deleted_by FROM messages WHERE id = ?", (req.message_id,))
+    msg = cursor.fetchone()
+    if not msg:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    sender_id = msg["sender_id"]
+    chat_id = msg["chat_id"]
+    deleted_by = msg["deleted_by"] or ""
+    
+    if req.delete_type == "everyone":
+        if sender_id != user["user_id"] and user["role"] != "admin":
+            conn.close()
+            raise HTTPException(status_code=403, detail="Permission denied to delete this message for everyone")
+            
+        cursor.execute("UPDATE messages SET is_deleted = 1 WHERE id = ?", (req.message_id,))
+        conn.commit()
+        
+        cursor.execute("SELECT user_id FROM chat_members WHERE chat_id = ?", (chat_id,))
+        members = [r["user_id"] for r in cursor.fetchall()]
+        conn.close()
+        
+        delete_payload = {
+            "type": "message_deleted",
+            "message_id": req.message_id,
+            "chat_id": chat_id
+        }
+        
+        for member_id in members:
+            await manager.send_personal_message(delete_payload, member_id)
+            
+    else: # delete_type == "me"
+        # Append user ID as ",user_id," to deleted_by field to filter it out in queries
+        user_id_val = user["user_id"]
+        if not deleted_by:
+            new_deleted_by = f",{user_id_val},"
+        else:
+            if f",{user_id_val}," not in deleted_by:
+                new_deleted_by = f"{deleted_by}{user_id_val},"
+            else:
+                new_deleted_by = deleted_by
+                
+        cursor.execute("UPDATE messages SET deleted_by = ? WHERE id = ?", (new_deleted_by, req.message_id))
+        conn.commit()
+        conn.close()
+        
+    return {"status": "success", "message_id": req.message_id}
+
+
+@app.post("/api/messages/recover")
+async def recover_message(req: RecoverMessageRequest, user = Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin permissions required to recover messages")
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT id, chat_id, sender_id, sender_name, content, type, file_path, size_bytes, timestamp, is_delivered, is_read 
+        FROM messages 
+        WHERE id = ?
+    """, (req.message_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    msg_data = dict(row)
+    chat_id = msg_data["chat_id"]
+    
+    cursor.execute("UPDATE messages SET is_deleted = 0 WHERE id = ?", (req.message_id,))
+    conn.commit()
+    
+    cursor.execute("SELECT user_id FROM chat_members WHERE chat_id = ?", (chat_id,))
+    members = [r["user_id"] for r in cursor.fetchall()]
+    conn.close()
+    
+    recover_payload = {
+        "type": "message_recovered",
+        "message": msg_data
+    }
+    
+    for member_id in members:
+        await manager.send_personal_message(recover_payload, member_id)
+        
+    return {"status": "success", "message_id": req.message_id}
+
+
+@app.get("/api/users/profile/{username}")
+def get_user_profile(username: str, user = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT username, avatar_url, status_text, is_online, last_seen 
+        FROM users 
+        WHERE username = ? COLLATE NOCASE
+    """, (username.strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    return dict(row)
 
 # -------------------------------------------------------------
 # MEDIA UPLOADER & LEGACY VAULT ENDPOINTS
@@ -873,13 +1008,15 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 if not chat_id:
                     continue
                     
+                reply_to_id = data.get("reply_to_id", None)
+                
                 # Write message to DB
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO messages (chat_id, sender_id, sender_name, content, type, file_path, size_bytes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (chat_id, user_id, username, content, msg_type, file_path, size_bytes))
+                    INSERT INTO messages (chat_id, sender_id, sender_name, content, type, file_path, size_bytes, reply_to_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (chat_id, user_id, username, content, msg_type, file_path, size_bytes, reply_to_id))
                 message_id = cursor.lastrowid
                 conn.commit()
                 
@@ -901,7 +1038,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     "size_bytes": size_bytes,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "is_read": 0,
-                    "is_delivered": 0
+                    "is_delivered": 0,
+                    "reply_to_id": reply_to_id
                 }
                 
                 delivered = False

@@ -154,13 +154,16 @@
                         <header class="chat-header">
                             <div class="chat-header-info">
                                 <button class="back-btn" onclick="closeActiveChat()">←</button>
-                                <img id="active-chat-avatar" src="" alt="Avatar">
-                                <div class="name-status">
-                                    <h3 id="active-chat-title">Chat Name</h3>
-                                    <span id="active-chat-status" class="status-offline">Offline</span>
+                                <div class="header-avatar-status" onclick="openContactProfileDrawer()" style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <img id="active-chat-avatar" src="" alt="Avatar">
+                                    <div class="name-status">
+                                        <h3 id="active-chat-title">Chat Name</h3>
+                                        <span id="active-chat-status" class="status-offline">Offline</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="chat-header-actions">
+                                <button id="labs-terminal-btn" class="btn btn-secondary-small" style="display: none;" onclick="toggleCyberdeckPanel()" title="Open Cyberdeck CLI Console">📟 <span class="mobile-hide">Cyberdeck</span></button>
                                 <button id="e2ee-toggle-btn" class="btn btn-secondary-small" onclick="toggleE2EE()" title="Toggle End-to-End Encryption">🔒 <span class="mobile-hide">E2EE Off</span></button>
                                 <button class="btn btn-secondary-small" onclick="toggleClipboardPanel()">📋 <span class="mobile-hide">Clipboard</span></button>
                                 <button class="btn btn-secondary-small" onclick="toggleVaultPanel()">📁 <span class="mobile-hide">Vault Files</span></button>
@@ -181,6 +184,19 @@
                         
                         <!-- Chat Input Deck -->
                         <footer class="chat-input-deck">
+                            <!-- Reply Preview Quote Banner -->
+                            <div id="reply-preview-bar" class="reply-preview-bar">
+                                <span class="reply-icon">💬</span>
+                                <div class="reply-info">
+                                    <span class="reply-user" id="reply-preview-user">User</span>
+                                    <span class="reply-text" id="reply-preview-text">Message preview...</span>
+                                </div>
+                                <button type="button" class="reply-close-btn" onclick="clearReplyQuote()">✕</button>
+                            </div>
+
+                            <!-- Emoji Picker Popover -->
+                            <div id="emoji-picker-popover" class="emoji-picker-popover"></div>
+                            
                             <!-- Attachments dropdown trigger -->
                             <div class="input-btn-wrapper">
                                 <button class="input-deck-btn" onclick="toggleAttachmentMenu()">📎</button>
@@ -195,16 +211,77 @@
                             
                             <!-- Main Text Field -->
                             <form id="chat-send-form" class="chat-send-form" onsubmit="sendTextMessage(event)">
+                                <button type="button" id="emoji-picker-btn" class="emoji-picker-btn" onclick="toggleEmojiPicker()" aria-label="Toggle emoji picker">😀</button>
+                                <button type="button" id="labs-cloak-btn" class="labs-cloak-btn" onclick="toggleStealthMode()" title="Toggle Steganographic Stealth Mode" style="display: none;">🕵️</button>
                                 <input type="text" id="chat-text-input" placeholder="Type a message..." required autocomplete="off">
                                 <button type="submit" class="send-submit-btn">✈</button>
                             </form>
                             
                             <!-- Voice Note Recorder Button -->
                             <button id="voice-record-btn" class="input-deck-btn voice-btn" onclick="toggleVoiceRecording()" aria-label="Record voice note">🎙️</button>
-    <span id="recording-timer" aria-live="polite"><span class="timer-dot"></span><span id="timer-text">0:00</span></span>
+                            <span id="recording-timer" aria-live="polite"><span class="timer-dot"></span><span id="timer-text">0:00</span></span>
                         </footer>
                     </div>
                 </main>
+                
+                <!-- RIGHT SLIDING DRAWER: Contact Profile & Settings -->
+                <div id="contact-profile-panel" class="contact-profile-panel">
+                    <div class="profile-drawer-header">
+                        <h3>Profile Details</h3>
+                        <button class="close-btn" onclick="openContactProfileDrawer()">✕</button>
+                    </div>
+                    <div class="profile-drawer-body">
+                        <div class="profile-detail-card">
+                            <img id="profile-drawer-avatar" src="" alt="Avatar">
+                            <h2 id="profile-drawer-username">Username</h2>
+                            <span id="profile-drawer-status" class="status-badge">Offline</span>
+                            <p id="profile-drawer-bio" class="profile-bio">"Hey there! I am using AetherLink."</p>
+                        </div>
+                        
+                        <div class="profile-settings-section">
+                            <h4>Interactive Settings</h4>
+                            
+                            <div class="setting-item">
+                                <span class="setting-label">Mute Notifications</span>
+                                <label class="cyber-switch">
+                                    <input type="checkbox" id="profile-mute-toggle" onchange="toggleProfileMute()">
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            
+                            <div class="setting-item color-setting">
+                                <span class="setting-label">Chat Theme Color</span>
+                                <div class="accent-picker-grid">
+                                    <div class="accent-dot color-cyan" onclick="setProfileChatAccent('cyan')" title="Cyan Theme"></div>
+                                    <div class="accent-dot color-pink" onclick="setProfileChatAccent('pink')" title="Magenta Theme"></div>
+                                    <div class="accent-dot color-purple" onclick="setProfileChatAccent('purple')" title="Purple Theme"></div>
+                                    <div class="accent-dot color-blue" onclick="setProfileChatAccent('blue')" title="Blue Theme"></div>
+                                    <div class="accent-dot color-yellow" onclick="setProfileChatAccent('yellow')" title="Yellow Theme"></div>
+                                    <div class="accent-dot color-green" onclick="setProfileChatAccent('green')" title="Green Theme"></div>
+                                </div>
+                            </div>
+                            
+                            <button class="btn btn-secondary w-100" style="margin-top: 16px;" onclick="exportProfileChatHistory()">
+                                📥 Export Chat History
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- CYBERDECK CLI TERMINAL PANEL -->
+                <div id="cyberdeck-console-panel" class="cyberdeck-console-panel">
+                    <div class="cyberdeck-header">
+                        <span class="matrix-text">SYSTEM DECK CONSOLE // AETHERSYNC v1.0.4</span>
+                        <button class="close-btn" onclick="toggleCyberdeckPanel()">✕</button>
+                    </div>
+                    <div class="cyberdeck-body" id="cyberdeck-history">
+                        <div>&gt; Type /help for system commands.</div>
+                    </div>
+                    <div class="cyberdeck-input-bar">
+                        <span>&gt;</span>
+                        <input type="text" id="cyberdeck-cmd-input" placeholder="Enter deck command..." autocomplete="off" onkeydown="handleCyberdeckKey(event)">
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -275,14 +352,66 @@
                 </div>
 
                 <!-- Notification Audio Toggle -->
-                <div style="margin-bottom: 16px;">
+                <div style="margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
                     <h4 style="font-size: 10px; color: var(--accent-color); margin-bottom: 8px; letter-spacing: 1px;">SOUND NOTIFICATIONS</h4>
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer; color: var(--text-body);">
                         <input type="checkbox" id="settings-sound-alert" style="accent-color: var(--accent-color);"> Enable alert sound on new messages
                     </label>
                 </div>
 
+                <!-- Experimental Labs Settings -->
+                <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 16px;">
+                    <h4 style="font-size: 10px; color: var(--accent-color); margin-bottom: 8px; letter-spacing: 1px;">EXPERIMENTAL LABS</h4>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer; color: var(--text-body);">
+                            <input type="checkbox" id="labs-replies-toggle" style="accent-color: var(--accent-color);"> Enable Threaded Message Replies
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer; color: var(--text-body);">
+                            <input type="checkbox" id="labs-cloak-toggle" style="accent-color: var(--accent-color);"> Enable Steganographic Visual Cloak
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer; color: var(--text-body);">
+                            <input type="checkbox" id="labs-muffle-toggle" style="accent-color: var(--accent-color);"> Enable Frequency Muffle Focus Mode
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer; color: var(--text-body);">
+                            <input type="checkbox" id="labs-terminal-toggle" style="accent-color: var(--accent-color);" onchange="toggleCyberdeckAvailability()"> Enable Cyberdeck Command Terminal
+                        </label>
+                    </div>
+                </div>
+
                 <button class="btn btn-primary" style="width: 100%;" onclick="saveSettings()">SAVE SETTINGS</button>
+            </div>
+        </div>
+
+        <!-- Forward Message Modal -->
+        <div id="forward-message-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Forward Message</h3>
+                    <button class="close-btn" onclick="toggleForwardModal()">✕</button>
+                </div>
+                <div class="modal-body" style="padding: 16px 0;">
+                    <div class="input-group" style="margin-bottom: 12px; padding: 0 16px;">
+                        <input type="text" id="forward-search-input" placeholder="🔍 Search contacts..." oninput="filterForwardContacts()" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <div id="forward-contacts-list" class="forward-contacts-list" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;">
+                        <!-- Contacts loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Choice Modal -->
+        <div id="delete-choice-modal" class="modal">
+            <div class="modal-content" style="max-width: 320px; text-align: center; padding: 24px; position: relative;">
+                <div class="modal-header" style="justify-content: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0; font-size: 16px;">Delete Message</h3>
+                    <button class="close-btn" style="position: absolute; right: 16px; top: 16px;" onclick="closeDeleteChoiceModal()">✕</button>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">Choose how you want to remove this message:</p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="executeDeleteMessage('me')" style="padding: 10px;">Delete for me</button>
+                    <button id="delete-everyone-btn" class="btn btn-primary" style="background-color: #ef4444; color: white; padding: 10px;" onclick="executeDeleteMessage('everyone')">Delete for everyone</button>
+                </div>
             </div>
         </div>
 
