@@ -4,7 +4,7 @@ FROM python:3.10-slim
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8080 \
+    PORT=7860 \
     AETHERSYNC_DB_PATH=/app/data/aethersync.db \
     AETHERSYNC_VAULT_DIR=/app/data/shared_vault
 
