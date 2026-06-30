@@ -24,8 +24,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
-# Create a directory for persistent data
-RUN mkdir -p /app/data
+# Create a directory for persistent data and configure permissions for non-root containers
+RUN mkdir -p /app/data && chmod -R 777 /app/data
 
 # Expose port
 EXPOSE 8080
