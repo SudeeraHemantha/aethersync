@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Import database functions
-from database import get_db_connection, hash_password, verify_password, DB_PATH
+from database import get_db_connection, hash_password, verify_password, DB_PATH, init_db
 
 app = FastAPI(title="AetherLink Real-Time API")
 
@@ -1422,6 +1422,7 @@ def udp_listener():
 
 @app.on_event("startup")
 def start_udp_services():
+    init_db()
     threading.Thread(target=udp_broadcaster, daemon=True).start()
     threading.Thread(target=udp_listener, daemon=True).start()
     threading.Thread(target=storage_optimizer_daemon, daemon=True).start()
