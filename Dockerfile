@@ -28,7 +28,7 @@ COPY frontend/ ./frontend/
 RUN mkdir -p /app/data && chmod -R 777 /app/data
 
 # Expose port
-EXPOSE 8080
+EXPOSE 7860
 
 # Start command
-CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-7860}"]
