@@ -1,3 +1,14 @@
+---
+title: AetherSync
+emoji: ⚡
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 # AetherLink - Decentralized P2P LAN Messenger & Collaborative Vault
 
 AetherLink is a premium, secure, real-time local network (LAN) communication and file sharing platform built with FastAPI, SQLite, and WebSockets. It operates with **zero internet reliance** over local Wi-Fi, featuring a decentralized Peer-to-Peer (P2P) network architecture.
