@@ -5,3 +5,4 @@ pydantic>=2.0
 customtkinter>=5.2.0
 python-multipart>=0.0.6
 websockets>=10.0
+sqlcipher3-wheels>=0.5.7

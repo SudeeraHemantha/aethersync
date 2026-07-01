@@ -1474,7 +1474,11 @@ def run_storage_optimization():
         print("[Storage Optimizer] Running database VACUUM...")
         try:
             # Vacuum must be run in autocommit mode (isolation_level=None)
-            conn = sqlite3.connect(DB_PATH)
+            from database import db_module, get_db_key
+            conn = db_module.connect(DB_PATH)
+            db_key = get_db_key()
+            if db_key:
+                conn.execute(f"PRAGMA key = '{db_key}';")
             conn.isolation_level = None
             conn.execute("VACUUM")
             conn.close()
