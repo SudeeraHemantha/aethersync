@@ -12,7 +12,7 @@ import datetime
 from typing import Optional, List, Dict
 from fastapi import FastAPI, Request, UploadFile, File, Form, Header, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -221,6 +221,7 @@ def get_current_admin(user = Depends(get_current_user)):
 # AUTHENTICATION ENDPOINTS
 # -------------------------------------------------------------
 active_nonces = defaultdict(dict)
+discovered_peers = {}  # In-memory registry of dynamic local LAN peers: {username_lower: {"ip": ip, "port": port, "last_seen": timestamp}}
 
 @app.post("/api/auth/challenge")
 def get_auth_challenge(req: ChallengeRequest):
@@ -1084,17 +1085,28 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     conn.close()
                     
                     for member in other_members:
-                        if member["remote_ip"]:
+                        m_username = member["username"].lower()
+                        # Resolve the dynamic IP and port if discovered in local LAN
+                        r_ip = member["remote_ip"]
+                        r_port = 8080
+                        
+                        if m_username in discovered_peers and time.time() - discovered_peers[m_username]["last_seen"] < 60:
+                            r_ip = discovered_peers[m_username]["ip"]
+                            r_port = discovered_peers[m_username]["port"]
+                            
+                        if r_ip:
                             # Construct the absolute URL if it is a file path
                             f_path = file_path
                             if f_path and f_path.startswith("/api/files/"):
                                 local_ip = get_local_ip()
-                                f_path = f"http://{local_ip}:8080{f_path}"
+                                import os
+                                local_port = int(os.environ.get("PORT", 8080))
+                                f_path = f"http://{local_ip}:{local_port}{f_path}"
                             
                             import threading
                             threading.Thread(
                                 target=forward_message_to_remote,
-                                args=(member["remote_ip"], username, content, msg_type, f_path, size_bytes),
+                                args=(r_ip, username, content, msg_type, f_path, size_bytes, r_port),
                                 daemon=True
                             ).start()
                 except Exception as e:
@@ -1197,6 +1209,12 @@ def serve_serviceworker():
         return FileResponse(sw_path, media_type="application/javascript")
     raise HTTPException(status_code=404)
 
+@app.get("/api/downloads/desktop")
+def download_desktop_app():
+    # Redirect to high-speed CDN hosted GitHub Release package
+    github_release_url = "https://github.com/SudeeraHemantha/aethersync/releases/download/v1.0.0/AetherSync_Installer.zip"
+    return RedirectResponse(url=github_release_url)
+
 # -------------------------------------------------------------
 # REMOTE PEER-TO-PEER LAN CHATTING & UDP AUTO-DISCOVERY
 # -------------------------------------------------------------
@@ -1296,9 +1314,9 @@ async def receive_remote_message(req: RemoteMessagePayload):
     await manager.send_personal_message(msg_payload, admin_id)
     return {"status": "success", "message_id": message_id}
 
-def forward_message_to_remote(remote_ip: str, sender_name: str, content: str, msg_type: str, file_path: str = None, size_bytes: int = 0):
+def forward_message_to_remote(remote_ip: str, sender_name: str, content: str, msg_type: str, file_path: str = None, size_bytes: int = 0, port: int = 8080):
     try:
-        url = f"http://{remote_ip}:8080/api/messages/receive"
+        url = f"http://{remote_ip}:{port}/api/messages/receive"
         payload = {
             "sender_name": sender_name,
             "content": content,
@@ -1373,11 +1391,13 @@ def udp_broadcaster():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     
+    import os
+    current_port = int(os.environ.get("PORT", 8080))
     payload = {
         "service": "aethersync",
         "username": f"Classmate-{hostname}",
         "ip": local_ip,
-        "port": 8080
+        "port": current_port
     }
     
     print(f"[UDP] Broadcaster started.")
@@ -1417,6 +1437,13 @@ def udp_listener():
                 remote_ip = payload.get("ip")
                 if remote_user and remote_ip:
                     register_remote_user(remote_user, remote_ip)
+                    # Register dynamically in in-memory peer table
+                    r_port = payload.get("port", 8080)
+                    discovered_peers[remote_user.lower()] = {
+                        "ip": remote_ip,
+                        "port": r_port,
+                        "last_seen": time.time()
+                    }
         except Exception:
             pass
 
